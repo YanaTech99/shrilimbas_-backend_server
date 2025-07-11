@@ -1,8 +1,8 @@
-// import pool from '../db'
+import pool from "../db/index.js";
 import { generateAccessToken } from "../utils/jwt.util.js";
 
 const loginViaPhone = async (req, res) => {
-  const { phone_number } = req.body;
+  const { phone_number, user_type } = req.body;
 
   if (!phone_number) {
     return res.status(400).json({
@@ -11,32 +11,74 @@ const loginViaPhone = async (req, res) => {
     });
   }
 
-  try {
-    const userQuery = await pool.query("SELECT * FROM users WHERE phone = $1", [
-      phone_number,
-    ]);
+  if (!user_type) {
+    return res.status(400).json({
+      success: false,
+      error: "User type is required",
+    });
+  }
 
-    let user = userQuery.rows[0];
+  const validUserTypes = ["CUSTOMER", "VENDOR", "DELIVERY_BOY"];
+  if (!validUserTypes.includes(user_type)) {
+    return res.status(400).json({
+      success: false,
+      error: "Invalid user type",
+    });
+  }
+
+  const client = await pool.getConnection();
+
+  try {
+    await client.beginTransaction();
+
+    const [userRows] = await client.execute(
+      "SELECT * FROM users WHERE phone = ?",
+      [phone_number]
+    );
+
+    let user;
     let message = "";
 
-    if (!user) {
+    if (!userRows || userRows.length === 0) {
       // Create new user
-      const insertUser = await pool.query(
-        `INSERT INTO users (phone, is_active) 
-         VALUES ($1, TRUE) RETURNING *`,
+      const [insertResult] = await client.execute(
+        `INSERT INTO users (phone, user_type, full_name, is_active) VALUES (?, ?, 'Guest', 1)`,
+        [phone_number, user_type]
+      );
+
+      const [newUserRows] = await client.execute(
+        `SELECT * FROM users WHERE phone = ?`,
         [phone_number]
       );
-      user = insertUser.rows[0];
+
+      // insert into resepective profile table based on user type
+      let profileTable = "customers";
+      if (user_type === "VENDOR") {
+        profileTable = "shops";
+      } else if (user_type === "DELIVERY_BOY") {
+        profileTable = "delivery_boys";
+      }
+
+      const [profileInsertResult] = await client.execute(
+        `INSERT INTO ${profileTable} (user_id, name, email) VALUES (?, 'Guest', 'example@example.com')`,
+        [newUserRows[0].id]
+      );
+
+      user = newUserRows[0];
       message = "Welcome new user";
     } else {
+      user = userRows[0];
       message = "Welcome back user";
     }
 
-    // Generate JWT
+    // Generate JWT (assumes you have this function available)
     const token = generateAccessToken({
       id: user.id,
       phone: user.phone,
+      user_type: user.user_type,
     });
+
+    await client.commit();
 
     return res.status(200).json({
       success: true,
@@ -49,10 +91,14 @@ const loginViaPhone = async (req, res) => {
       },
     });
   } catch (err) {
+    await client.rollback();
     console.error("Login error:", err);
-    return res
-      .status(500)
-      .json({ success: false, error: "Internal server error" });
+    return res.status(500).json({
+      success: false,
+      error: "Internal server error",
+    });
+  } finally {
+    client.release();
   }
 };
 

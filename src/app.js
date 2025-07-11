@@ -30,7 +30,12 @@ app.use(cookieParser());
 
 // Import routes
 import authRoutes from "./assets/router/auth.route.js";
+import appRoutes from "./assets/router/app.route.js";
+import shopRoutes from "./assets/router/shop.route.js";
 
+// define routes
 app.use("/api/auth", authRoutes);
+app.use("/api/app", appRoutes);
+app.use("/api/shop", shopRoutes);
 
 export default app;
