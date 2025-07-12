@@ -1,17 +1,40 @@
 import { Router } from "express";
 import {
-  addBrands,
-  addCategories,
+  addBrand,
+  addCategory,
   addProducts,
+  getPaginatedBrands,
+  getPaginatedCategories,
+  getPaginatedproducts,
   updateShop,
 } from "../controller/shop.controller.js";
 import { authenticateToken } from "../middleware/auth.middleware.js";
+import { upload } from "../middleware/multer.middleware.js";
 
 const router = Router();
 
 router.route("/updateShop").patch(authenticateToken, updateShop);
-router.route("/addBrand").post(authenticateToken, addBrands);
-router.route("/addProduct").post(authenticateToken, addProducts);
-router.route("/addCategory").post(authenticateToken, addCategories);
+
+router
+  .route("/addBrand")
+  .post(authenticateToken, upload.single("brandImage"), addBrand);
+
+router.route("/addProduct").post(
+  authenticateToken,
+  upload.fields([
+    { name: "thumbnail", maxCount: 1 },
+    { name: "gallery_images", maxCount: 10 },
+    { name: "variant_thumbnail_0", maxCount: 1 },
+  ]),
+  addProducts
+);
+
+router
+  .route("/addCategory")
+  .post(authenticateToken, upload.single("categoryImage"), addCategory);
+
+router.route("/getCategories").get(authenticateToken, getPaginatedCategories);
+router.route("/getBrands").get(authenticateToken, getPaginatedBrands);
+router.route("/getProducts").get(authenticateToken, getPaginatedproducts);
 
 export default router;

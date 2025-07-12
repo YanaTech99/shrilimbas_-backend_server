@@ -1,0 +1,260 @@
+// users table
+CREATE TABLE users (
+  id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+
+  -- Auth Fields
+  email VARCHAR(255) UNIQUE,
+  phone VARCHAR(20) UNIQUE,
+
+  -- User Info
+  full_name VARCHAR(255),
+  profile_image TEXT,
+  dob DATE,
+  gender VARCHAR(10),
+
+  -- Security & Verification
+  is_email_verified BOOLEAN DEFAULT FALSE,
+  is_phone_verified BOOLEAN DEFAULT FALSE,
+  is_active BOOLEAN DEFAULT TRUE,
+  is_deleted BOOLEAN DEFAULT FALSE,
+  last_login_at TIMESTAMP NULL DEFAULT NULL,
+
+  -- Timestamps
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE TABLE shops (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    logo_url VARCHAR(512),
+    license_number VARCHAR(100),
+    status ENUM('ACTIVE', 'INACTIVE', 'SUSPENDED') DEFAULT 'ACTIVE',
+    
+    email VARCHAR(255) NOT NULL UNIQUE,
+    contact_alternate_phone VARCHAR(20),
+    
+    address_id INT, -- should reference an addresses table
+    is_verified BOOLEAN DEFAULT FALSE,
+    is_featured BOOLEAN DEFAULT FALSE,
+    
+    categories JSON, -- MySQL uses JSON, not JSONB
+    working_hours JSON, -- e.g., {"mon": "9-5", "sun": "closed"}
+    is_open BOOLEAN DEFAULT TRUE,
+    
+    last_login_at TIMESTAMP NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE TABLE shop_bank_accounts (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+
+  shop_id INT NOT NULL,
+  account_holder_name VARCHAR(255) NOT NULL,
+  account_number VARCHAR(50) NOT NULL,
+  bank_name VARCHAR(255) NOT NULL,
+  branch_name VARCHAR(255),
+  ifsc_code VARCHAR(20),
+  swift_code VARCHAR(20),
+  is_primary BOOLEAN DEFAULT TRUE,
+
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+  FOREIGN KEY (shop_id) REFERENCES shops(id) ON DELETE CASCADE
+);
+
+CREATE TABLE brands (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    title VARCHAR(255) NOT NULL UNIQUE,
+    slug VARCHAR(255) NOT NULL UNIQUE, -- For SEO-friendly URLs
+    description TEXT,
+    image_url TEXT, -- Could be URL to brand logo or banner
+    status BOOLEAN DEFAULT TRUE, -- Active/inactive toggle
+    sort_order INT DEFAULT 0, -- Useful for ordering in listings
+    meta_title VARCHAR(255), -- SEO
+    meta_description TEXT, -- SEO
+    created_by INT, -- Optional: references admin/user who created
+    updated_by INT, -- Optional: references admin/user who last updated
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE TABLE categories (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+
+  title VARCHAR(255) NOT NULL,
+  slug VARCHAR(255) UNIQUE, -- SEO-friendly URL
+  description TEXT,
+  image_url TEXT,
+
+  parent_id INT DEFAULT NULL, -- Self-reference for subcategories
+
+  status ENUM('active', 'inactive') DEFAULT 'active',
+  sort_order INT DEFAULT 0, -- For manual ordering
+
+  meta_title VARCHAR(255),
+  meta_description TEXT,
+
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+  FOREIGN KEY (parent_id) REFERENCES categories(id) ON DELETE SET NULL
+);
+
+CREATE TABLE products (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+
+  product_name VARCHAR(255) NOT NULL,
+  slug VARCHAR(255) UNIQUE,
+  sku VARCHAR(100) UNIQUE NOT NULL,
+  barcode VARCHAR(100),
+
+  thumbnail TEXT,
+  gallery_images JSON,
+  short_description TEXT,
+  long_description TEXT,
+  specifications JSON,
+
+  mrp DECIMAL(10,2) NOT NULL,
+  selling_price DECIMAL(10,2) NOT NULL,
+  cost_price DECIMAL(10,2),
+  tax_percentage INT,
+  hsn_code VARCHAR(50),
+
+  stock_quantity INT DEFAULT 0,
+  min_stock_alert INT DEFAULT 0,
+  stock_unit VARCHAR(50),
+  is_in_stock BOOLEAN DEFAULT TRUE,
+  warehouse_location VARCHAR(255),
+
+  brand_id INT NOT NULL,
+  shop_id INT NOT NULL,
+
+  tags JSON,
+  attributes JSON,
+
+  is_featured BOOLEAN DEFAULT FALSE,
+  is_new_arrival BOOLEAN DEFAULT FALSE,
+  is_best_seller BOOLEAN DEFAULT FALSE,
+
+  product_type VARCHAR(50),
+  status VARCHAR(20),
+
+  sort_order INT DEFAULT 0, -- 🔹 Added field for manual sorting
+
+  meta_title VARCHAR(255),
+  meta_description TEXT,
+  custom_fields JSON,
+
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  deleted_at TIMESTAMP NULL DEFAULT NULL,
+
+  FOREIGN KEY (brand_id) REFERENCES brands(id) ON DELETE CASCADE,
+  FOREIGN KEY (shop_id) REFERENCES shops(id) ON DELETE CASCADE
+);
+
+CREATE TABLE product_variants (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+
+  product_id INT NOT NULL,
+  sku VARCHAR(100) UNIQUE,
+  barcode VARCHAR(100),
+
+  color VARCHAR(50),
+  size VARCHAR(20),
+  material VARCHAR(100), -- optional variant dimension
+  thumbnail TEXT,
+  gallery_images JSON, -- holds array of image URLs
+
+  base_price DECIMAL(10,2) NOT NULL,
+  selling_price DECIMAL(10,2),         -- optional discount price
+  cost_price DECIMAL(10,2),            -- internal for reporting
+  stock INT NOT NULL DEFAULT 0,
+  stock_alert_at INT DEFAULT 5,        -- alert level for low stock
+
+  is_available BOOLEAN DEFAULT TRUE,
+  is_visible BOOLEAN DEFAULT TRUE,
+  is_deleted BOOLEAN DEFAULT FALSE,
+
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+  FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+);
+
+CREATE TABLE product_categories (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+
+  product_id INT NOT NULL,
+  category_id INT NOT NULL,
+  
+  sort_order INT DEFAULT 0,         -- manual ordering within category if needed
+
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+  FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+  FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE,
+
+  UNIQUE KEY unique_product_category (product_id, category_id)
+);
+
+CREATE TABLE sliders (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+
+  name VARCHAR(100) NOT NULL,                      -- Identifier (e.g., 'homepage_deals')
+  position ENUM(
+    'homepage_top',
+    'homepage_middle',
+    'homepage_bottom',
+    'category_top',
+    'category_sidebar',
+    'product_page_top',
+    'cart_page',
+    'checkout_page',
+    'mobile_top',
+    'mobile_bottom',
+    'popup',
+    'offer_zone',
+    'search_page',
+    'global_footer'
+  ) NOT NULL,
+
+  type ENUM('single', 'carousel') DEFAULT 'single',
+  autoplay BOOLEAN DEFAULT FALSE,
+
+  status ENUM('active', 'inactive') DEFAULT 'active',
+  is_visible BOOLEAN DEFAULT TRUE,
+
+  start_date DATE DEFAULT CURRENT_DATE,
+  end_date DATE,
+
+  sort_order INT DEFAULT 0,
+
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE TABLE slider_items (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+
+  slider_id INT NOT NULL,
+  title VARCHAR(255),
+  subtitle VARCHAR(255),
+  image_url TEXT NOT NULL,
+
+  link_type ENUM('product', 'category', 'url', 'none') DEFAULT 'none',
+  link_reference_id INT,
+  link_url TEXT,
+
+  sort_order INT DEFAULT 0,
+  is_active BOOLEAN DEFAULT TRUE,
+
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+  FOREIGN KEY (slider_id) REFERENCES sliders(id) ON DELETE CASCADE
+);

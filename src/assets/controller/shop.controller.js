@@ -1,4 +1,9 @@
 import pool from "../db/index.js";
+import fs from "fs";
+import {
+  uploadImageToCloudinary,
+  deleteFromCloudinary,
+} from "../utils/cloudinary.util.js";
 
 const updateShop = async (req, res) => {
   const { id: userId } = req.user;
@@ -84,7 +89,7 @@ const updateShop = async (req, res) => {
   }
 };
 
-const addBrands = async (req, res) => {
+const addBrand = async (req, res) => {
   const { id: user_id, user_type } = req.user;
 
   if (user_type !== "VENDOR") {
@@ -94,17 +99,11 @@ const addBrands = async (req, res) => {
     });
   }
 
-  const { brands } = req.body;
-
-  if (!Array.isArray(brands) || brands.length === 0) {
-    return res.status(400).json({
-      success: false,
-      message: "No brand data provided.",
-    });
-  }
+  const brand = req.body;
+  const image = req.file || null;
 
   try {
-    // Get shop for vendor
+    // Get vendor's active shop
     const [shops] = await pool.execute(
       "SELECT id FROM shops WHERE user_id = ? AND status = 'ACTIVE' LIMIT 1",
       [user_id]
@@ -119,154 +118,328 @@ const addBrands = async (req, res) => {
 
     const shop_id = shops[0].id;
 
-    const allowedFields = [
-      "shop_id",
-      "title",
-      "slug",
-      "description",
-      "image_url",
-      "status",
-      "sort_order",
-      "meta_title",
-      "meta_description",
-    ];
+    const {
+      title,
+      slug,
+      description,
+      status = 1,
+      sort_order = 0,
+      meta_title,
+      meta_description,
+    } = brand;
 
-    const values = [];
-    const placeholders = [];
-
-    for (const brand of brands) {
-      const row = [];
-
-      for (const field of allowedFields) {
-        switch (field) {
-          case "shop_id":
-            row.push(shop_id);
-            break;
-          default:
-            row.push(brand[field] ?? null);
-        }
-      }
-
-      values.push(...row);
-      placeholders.push(`(${allowedFields.map(() => "?").join(", ")})`);
+    if (!title) {
+      return res.status(400).json({
+        success: false,
+        message: "Brand title is required.",
+      });
     }
 
-    const sql = `
-      INSERT INTO brands (${allowedFields.join(", ")})
-      VALUES ${placeholders.join(", ")}
-    `;
+    let image_url = null;
 
-    const [result] = await pool.execute(sql, values);
-
-    const allBrands = await pool.execute(
-      "SELECT * FROM brands WHERE shop_id = ?",
-      [shop_id]
+    const [result] = await pool.execute(
+      `INSERT INTO brands 
+       (title, slug, description, status, sort_order, meta_title, meta_description, shop_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        title,
+        slug,
+        description || null,
+        status,
+        sort_order,
+        meta_title || null,
+        meta_description || null,
+        shop_id,
+      ]
     );
+
+    // Upload image to Cloudinary
+    if (image) {
+      const uploadResult = await uploadImageToCloudinary(image.path);
+      if (uploadResult?.secure_url) {
+        image_url = uploadResult.secure_url;
+      }
+
+      await pool.execute("UPDATE brands SET image_url = ? WHERE id = ?", [
+        image_url,
+        result.insertId,
+      ]);
+    }
+
+    const [newBrand] = await pool.execute("SELECT * FROM brands WHERE id = ?", [
+      result.insertId,
+    ]);
 
     return res.status(201).json({
       success: true,
-      message: `${result.affectedRows} brand(s) added successfully.`,
-      data: allBrands[0],
+      message: "Brand added successfully.",
+      data: newBrand[0],
     });
   } catch (error) {
-    console.error("Error adding brands:", error.message);
+    console.error("Error adding brand:", error.message);
     return res.status(500).json({
       success: false,
-      error: "Internal Server Error",
+      message: "Failed to add brand.",
+      error: error.message,
+    });
+  } finally {
+    if (image && image.path && fs.existsSync(image.path)) {
+      fs.unlinkSync(image.path);
+    }
+  }
+};
+
+const getPaginatedBrands = async (req, res) => {
+  const { id: user_id } = req.user;
+
+  const shop_id = await pool.execute(
+    "SELECT id FROM shops WHERE user_id = ? AND status = 'ACTIVE' LIMIT 1",
+    [user_id]
+  );
+
+  try {
+    const {
+      page = 1,
+      limit = 10,
+      status,
+      title,
+      search,
+      sort_by = "sort_order",
+      order = "ASC",
+    } = req.query;
+
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+    const whereClauses = [];
+    const values = [];
+
+    // Filters
+    if (status) {
+      whereClauses.push("status = ?");
+      values.push(status);
+    }
+
+    if (title) {
+      whereClauses.push("title LIKE ?");
+      values.push(`%${title}%`);
+    }
+
+    if (search) {
+      whereClauses.push(`(
+        title LIKE ? OR
+        slug LIKE ? OR
+        description LIKE ?
+      )`);
+      values.push(`%${search}%`, `%${search}%`, `%${search}%`);
+    }
+
+    if (shop_id.length > 0) {
+      whereClauses.push("shop_id = ?");
+      values.push(shop_id[0].id);
+    }
+
+    const whereSQL = whereClauses.length
+      ? `WHERE ${whereClauses.join(" AND ")}`
+      : "";
+
+    // Total count for pagination
+    const [countResult] = await pool.execute(
+      `SELECT COUNT(*) AS total FROM brands ${whereSQL}`,
+      values
+    );
+    const total = countResult[0].total;
+    const totalPages = Math.ceil(total / parseInt(limit));
+    // Fetch paginated brands
+    const [brands] = await pool.execute(
+      `SELECT * FROM brands ${whereSQL} ORDER BY ${sort_by} ${order} LIMIT ? OFFSET ?`,
+      [...values, parseInt(limit), offset]
+    );
+
+    return res.status(200).json({
+      success: true,
+      total,
+      page: parseInt(page),
+      per_page: parseInt(limit),
+      total_pages: totalPages,
+      data: brands,
+    });
+  } catch (error) {
+    console.error("Error fetching brands:", error.message);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch brands.",
+      error: error.message,
     });
   }
 };
 
-const addCategories = async (req, res) => {
+const addCategory = async (req, res) => {
   const { id: user_id, user_type } = req.user;
 
   if (user_type !== "VENDOR") {
     return res.status(403).json({
       success: false,
-      message: "Forbidden: Only vendors can add categories.",
+      message: "Forbidden: Only vendor can add categories.",
     });
   }
 
-  const { categories } = req.body;
+  const category = req.body;
 
-  if (!Array.isArray(categories) || categories.length === 0) {
-    return res.status(400).json({
-      success: false,
-      message: "No category data provided.",
-    });
-  }
+  const [shop_id] = await pool.execute(
+    "SELECT id FROM shops WHERE user_id = ? AND status = 'ACTIVE' LIMIT 1",
+    [user_id]
+  );
+
+  const image = req.file ? req.file : null;
 
   try {
-    // Get shop for vendor
-    const [shops] = await pool.execute(
-      "SELECT id FROM shops WHERE user_id = ? AND status = 'ACTIVE' LIMIT 1",
-      [user_id]
+    const {
+      title,
+      description,
+      slug,
+      status = "active",
+      sort_order = 0,
+      meta_title,
+      meta_description,
+      parent_id,
+    } = category;
+
+    let validParentId = parent_id === "null" ? null : parent_id;
+    const [result] = await pool.execute(
+      `INSERT INTO categories 
+       (title, slug, description, status, sort_order, meta_title, meta_description, parent_id, shop_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        title,
+        slug,
+        description || null,
+        status,
+        sort_order,
+        meta_title || null,
+        meta_description || null,
+        validParentId || null,
+        shop_id[0].id,
+      ]
     );
 
-    if (shops.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "Active shop not found for this vendor.",
-      });
-    }
-
-    const shop_id = shops[0].id;
-
-    const allowedFields = [
-      "shop_id",
-      "title",
-      "slug",
-      "description",
-      "image_url",
-      "status",
-      "sort_order",
-      "meta_title",
-      "meta_description",
-      "parent_id",
-    ];
-
-    const values = [];
-    const placeholders = [];
-
-    for (const category of categories) {
-      const row = [];
-
-      for (const field of allowedFields) {
-        switch (field) {
-          case "shop_id":
-            row.push(shop_id);
-            break;
-          default:
-            row.push(category[field] ?? null);
-        }
+    if (image && image !== null) {
+      const uploadResult = await uploadImageToCloudinary(image.path);
+      if (uploadResult) {
+        await pool.execute("UPDATE categories SET image_url = ? WHERE id = ?", [
+          uploadResult.secure_url,
+          result.insertId,
+        ]);
       }
-
-      values.push(...row);
-      placeholders.push(`(${allowedFields.map(() => "?").join(", ")})`);
     }
 
-    const sql = `
-      INSERT INTO categories (${allowedFields.join(", ")})
-      VALUES ${placeholders.join(", ")}
-    `;
-
-    const [result] = await pool.execute(sql, values);
-
-    const allCategories = await pool.execute(
-      "SELECT * FROM categories WHERE shop_id = ?",
-      [shop_id]
+    const [newCategory] = await pool.execute(
+      "SELECT * FROM categories WHERE id = ?",
+      [result.insertId]
     );
 
     return res.status(201).json({
       success: true,
-      message: `${result.affectedRows} category(s) added successfully.`,
-      data: allCategories[0],
+      message: "Category added successfully.",
+      data: newCategory[0],
     });
   } catch (error) {
-    console.error("Error adding categories:", error.message);
+    console.error("Error adding category:", error.message);
     return res.status(500).json({
       success: false,
-      error: "Internal Server Error",
+      message: "Failed to add category.",
+      error: error.message,
+    });
+  } finally {
+    if (image && image !== null) {
+      fs.unlinkSync(image.path);
+    }
+  }
+};
+
+const getPaginatedCategories = async (req, res) => {
+  const { id: user_id } = req.user;
+  const shop_id = await pool.execute(
+    "SELECT id FROM shops WHERE user_id = ? AND status = 'ACTIVE' LIMIT 1",
+    [user_id]
+  );
+
+  try {
+    const {
+      page = 1,
+      limit = 10,
+      status,
+      title,
+      parent_id,
+      search,
+      sort_by = "sort_order",
+      order = "ASC",
+    } = req.query;
+
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+    const whereClauses = [];
+    const values = [];
+
+    // Filters
+    if (status) {
+      whereClauses.push("status = ?");
+      values.push(status);
+    }
+
+    if (title) {
+      whereClauses.push("title LIKE ?");
+      values.push(`%${title}%`);
+    }
+
+    if (parent_id) {
+      whereClauses.push("parent_id = ?");
+      values.push(parent_id);
+    }
+
+    if (search) {
+      whereClauses.push(`(
+        title LIKE ? OR
+        slug LIKE ? OR
+        description LIKE ?
+      )`);
+      values.push(`%${search}%`, `%${search}%`, `%${search}%`);
+    }
+
+    if (shop_id.length > 0) {
+      whereClauses.push("shop_id = ?");
+      values.push(shop_id[0].id);
+    }
+
+    const whereSQL = whereClauses.length
+      ? `WHERE ${whereClauses.join(" AND ")}`
+      : "";
+
+    // Total count for pagination
+    const [countResult] = await pool.execute(
+      `SELECT COUNT(*) AS total FROM categories ${whereSQL}`,
+      values
+    );
+    const total = countResult[0].total;
+    const totalPages = Math.ceil(total / parseInt(limit));
+
+    // Fetch paginated categories
+    const [categories] = await pool.execute(
+      `SELECT * FROM categories ${whereSQL} ORDER BY ${sort_by} ${order} LIMIT ? OFFSET ?`,
+      [...values, parseInt(limit), offset]
+    );
+
+    return res.status(200).json({
+      success: true,
+      total,
+      page: parseInt(page),
+      per_page: parseInt(limit),
+      total_pages: totalPages,
+      data: categories,
+    });
+  } catch (error) {
+    console.error("Error fetching categories:", error.message);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch categories.",
+      error: error.message,
     });
   }
 };
@@ -280,6 +453,7 @@ const addProducts = async (req, res) => {
       message: "Forbidden: Only vendors can add products.",
     });
   }
+
   const [shops] = await pool.execute(
     "SELECT id FROM shops WHERE user_id = ? AND status = 'ACTIVE' LIMIT 1",
     [user_id]
@@ -291,21 +465,22 @@ const addProducts = async (req, res) => {
       message: "Active shop not found for this vendor.",
     });
   }
+
   const shop_id = shops[0].id;
-
-  const product = req.body;
+  const product =
+    typeof req.body.product === "string"
+      ? JSON.parse(req.body.product)
+      : req.body;
   const variants = product.variants || [];
+  const productFiles = req.files || {};
 
-  // Required product fields
   const requiredFields = [
     "product_name",
     "sku",
     "mrp",
     "selling_price",
     "brand_id",
-    "shop_id",
   ];
-
   for (const field of requiredFields) {
     if (!product[field]) {
       return res.status(400).json({
@@ -315,11 +490,40 @@ const addProducts = async (req, res) => {
     }
   }
 
+  // Ensure thumbnail image is present
+  if (!productFiles.thumbnail || productFiles.thumbnail.length === 0) {
+    return res.status(400).json({
+      success: false,
+      message: "Thumbnail image is required for the product.",
+    });
+  }
+
   const connection = await pool.getConnection();
+  const cloudinaryUploads = [];
+  const localFiles = [];
+
   try {
     await connection.beginTransaction();
 
-    // Insert product
+    // Upload product thumbnail
+    const thumbFile = productFiles.thumbnail[0];
+    const thumbnailUpload = await uploadImageToCloudinary(thumbFile.path);
+    cloudinaryUploads.push(thumbnailUpload.public_id);
+    localFiles.push(thumbFile.path);
+
+    const galleryImages = [];
+    if (
+      productFiles.gallery_images &&
+      Array.isArray(productFiles.gallery_images)
+    ) {
+      for (const img of productFiles.gallery_images) {
+        const uploaded = await uploadImageToCloudinary(img.path);
+        cloudinaryUploads.push(uploaded.public_id);
+        localFiles.push(img.path);
+        galleryImages.push(uploaded.secure_url);
+      }
+    }
+
     const productFields = [
       "product_name",
       "slug",
@@ -358,20 +562,27 @@ const addProducts = async (req, res) => {
     const insertValues = [];
 
     for (const field of productFields) {
-      insertValues.push(
-        [
-          "gallery_images",
-          "specifications",
-          "tags",
-          "attributes",
-          "custom_fields",
-        ].includes(field) && typeof product[field] === "object"
-          ? JSON.stringify(product[field])
-          : product[field] ?? null
-      );
+      let value = null;
+      if (field === "thumbnail") {
+        value = thumbnailUpload.secure_url;
+      } else if (field === "gallery_images") {
+        value = JSON.stringify(galleryImages);
+      } else if (
+        ["tags", "attributes", "specifications", "custom_fields"].includes(
+          field
+        )
+      ) {
+        value =
+          typeof product[field] === "object"
+            ? JSON.stringify(product[field])
+            : null;
+      } else if (field === "shop_id") {
+        value = shop_id;
+      } else {
+        value = product[field] ?? null;
+      }
+      insertValues.push(value);
     }
-
-    insertValues.push(shop_id);
 
     const productSql = `
       INSERT INTO products (${productFields.join(", ")})
@@ -380,6 +591,25 @@ const addProducts = async (req, res) => {
 
     const [productResult] = await connection.execute(productSql, insertValues);
     const productId = productResult.insertId;
+
+    // Insert product categories
+    const categoryIds = product.category_ids || [];
+
+    if (categoryIds.length > 0) {
+      const categoryValues = [];
+      const placeholders = [];
+
+      for (const categoryId of categoryIds) {
+        categoryValues.push(productId, categoryId, 0);
+        placeholders.push("(?, ?, ?)");
+      }
+
+      const categorySql = `
+        INSERT INTO product_categories (product_id, category_id, sort_order)
+        VALUES ${placeholders.join(", ")}
+      `;
+      await connection.execute(categorySql, categoryValues);
+    }
 
     // Insert variants
     if (variants.length > 0) {
@@ -405,19 +635,39 @@ const addProducts = async (req, res) => {
       const variantValues = [];
       const variantPlaceholders = [];
 
-      for (const variant of variants) {
+      for (let i = 0; i < variants.length; i++) {
+        const variant = variants[i];
+
         if (!variant.sku || !variant.base_price) {
           throw new Error("Each variant must have `sku` and `base_price`");
         }
 
+        const thumbnailFile = productFiles[`variant_thumbnail_${i}`]?.[0];
+        if (!thumbnailFile) {
+          throw new Error(`Thumbnail is required for variant index ${i}`);
+        }
+
+        const thumbnailUpload = await uploadImageToCloudinary(
+          thumbnailFile.path
+        );
+        cloudinaryUploads.push(thumbnailUpload.public_id);
+        localFiles.push(thumbnailFile.path);
+
+        const variantGalleryUrls = [];
+        const galleryFiles = productFiles[`variant_gallery_images_${i}`] || [];
+
+        for (const g of galleryFiles) {
+          const uploaded = await uploadImageToCloudinary(g.path);
+          cloudinaryUploads.push(uploaded.public_id);
+          localFiles.push(g.path);
+          variantGalleryUrls.push(uploaded.secure_url);
+        }
+
         const row = variantFields.map((field) => {
           if (field === "product_id") return productId;
-          if (
-            field === "gallery_images" &&
-            typeof variant[field] === "object"
-          ) {
-            return JSON.stringify(variant[field]);
-          }
+          if (field === "thumbnail") return thumbnailUpload.secure_url;
+          if (field === "gallery_images")
+            return JSON.stringify(variantGalleryUrls);
           return variant[field] ?? null;
         });
 
@@ -431,7 +681,6 @@ const addProducts = async (req, res) => {
         INSERT INTO product_variants (${variantFields.join(", ")})
         VALUES ${variantPlaceholders.join(", ")}
       `;
-
       await connection.execute(variantSql, variantValues);
     }
 
@@ -444,6 +693,23 @@ const addProducts = async (req, res) => {
     });
   } catch (error) {
     await connection.rollback();
+
+    // Delete uploaded cloudinary images
+    for (const publicId of cloudinaryUploads) {
+      try {
+        await deleteFromCloudinary(publicId);
+      } catch (cloudErr) {
+        console.error(`Failed to delete cloudinary image: ${publicId}`);
+      }
+    }
+
+    // Remove local files
+    for (const filePath of localFiles) {
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+    }
+
     console.error("Error adding product:", error.message);
     return res.status(500).json({
       success: false,
@@ -455,4 +721,179 @@ const addProducts = async (req, res) => {
   }
 };
 
-export { updateShop, addCategories, addBrands, addProducts };
+const getPaginatedproducts = async (req, res) => {
+  const { id: user_id, user_type } = req.user;
+
+  if (user_type !== "VENDOR") {
+    return res.status(403).json({
+      success: false,
+      message: "Forbidden: Only vendors can access their products.",
+    });
+  }
+
+  const {
+    page = 1,
+    limit = 10,
+    status,
+    brand_id,
+    category_id,
+    search,
+  } = req.query;
+
+  const offset = (parseInt(page) - 1) * parseInt(limit);
+  const filters = [];
+  const values = [];
+
+  try {
+    // Step 1: Get vendor's shop ID
+    const [shopRows] = await pool.execute(
+      "SELECT id FROM shops WHERE user_id = ? AND status = 'ACTIVE' LIMIT 1",
+      [user_id]
+    );
+
+    if (shopRows.length === 0) {
+      return res
+        .status(404)
+        .json({ success: false, message: "No active shop found." });
+    }
+
+    const shopId = shopRows[0].id;
+
+    filters.push("p.shop_id = ?");
+    values.push(shopId);
+    filters.push("p.deleted_at IS NULL");
+
+    // Optional filters
+    if (status) {
+      filters.push("p.status = ?");
+      values.push(status);
+    }
+
+    if (brand_id) {
+      filters.push("p.brand_id = ?");
+      values.push(brand_id);
+    }
+
+    if (search) {
+      filters.push("(p.product_name LIKE ? OR p.sku LIKE ?)");
+      values.push(`%${search}%`, `%${search}%`);
+    }
+
+    const whereSQL = filters.length ? `WHERE ${filters.join(" AND ")}` : "";
+
+    // Step 2: Count total
+    const [countResult] = await pool.execute(
+      `SELECT COUNT(*) AS total FROM products p ${whereSQL}`,
+      values
+    );
+
+    const total = countResult[0].total;
+
+    // Step 3: Fetch paginated products
+    const [productRows] = await pool.execute(
+      `SELECT
+        p.id, p.product_name, p.slug, p.sku, p.thumbnail,
+        p.selling_price, p.mrp,
+        b.name AS brand
+       FROM products p
+       JOIN brands b ON p.brand_id = b.id
+       ${whereSQL}
+       ORDER BY p.created_at DESC
+       LIMIT ? OFFSET ?`,
+      [...values, parseInt(limit), offset]
+    );
+
+    if (productRows.length === 0) {
+      return res.json({
+        success: true,
+        total,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        data: [],
+      });
+    }
+
+    const productIds = productRows.map((p) => p.id);
+
+    // Step 4: Category filter (after product fetch)
+    if (category_id) {
+      const [filtered] = await pool.execute(
+        `SELECT DISTINCT product_id FROM product_categories WHERE category_id = ?`,
+        [category_id]
+      );
+      const validIds = new Set(filtered.map((r) => r.product_id));
+      productRows = productRows.filter((p) => validIds.has(p.id));
+    }
+
+    // Step 5: Get categories for each product
+    const [categoryMapRows] = await pool.execute(
+      `SELECT pc.product_id, c.title
+       FROM product_categories pc
+       JOIN categories c ON pc.category_id = c.id
+       WHERE pc.product_id IN (${productIds.map(() => "?").join(",")})`,
+      productIds
+    );
+
+    const categoryMap = {};
+    for (const row of categoryMapRows) {
+      if (!categoryMap[row.product_id]) categoryMap[row.product_id] = [];
+      categoryMap[row.product_id].push(row.title);
+    }
+
+    // Step 6: Get product variants
+    const [variantRows] = await pool.execute(
+      `SELECT
+         product_id, sku, color, size, material, selling_price
+       FROM product_variants
+       WHERE product_id IN (${productIds
+         .map(() => "?")
+         .join(",")}) AND is_deleted = FALSE`,
+      productIds
+    );
+
+    const variantMap = {};
+    for (const v of variantRows) {
+      if (!variantMap[v.product_id]) variantMap[v.product_id] = [];
+      variantMap[v.product_id].push(v);
+    }
+
+    // Step 7: Build final response
+    const data = productRows.map((product) => ({
+      id: product.id,
+      product_name: product.product_name,
+      slug: product.slug,
+      sku: product.sku,
+      thumbnail: product.thumbnail,
+      selling_price: product.selling_price,
+      mrp: product.mrp,
+      brand: product.brand,
+      categories: categoryMap[product.id] || [],
+      variants: variantMap[product.id] || [],
+    }));
+
+    return res.status(200).json({
+      success: true,
+      total,
+      page: parseInt(page),
+      limit: parseInt(limit),
+      data,
+    });
+  } catch (error) {
+    console.error("Error fetching products:", error.message);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch products.",
+      error: error.message,
+    });
+  }
+};
+
+export {
+  updateShop,
+  addCategory,
+  addBrand,
+  addProducts,
+  getPaginatedCategories,
+  getPaginatedBrands,
+  getPaginatedproducts,
+};
