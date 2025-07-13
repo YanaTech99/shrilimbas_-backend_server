@@ -35,12 +35,6 @@ const getAppData = async (req, res) => {
 
     const queryPromises = [
       client.execute(`
-        SELECT * FROM sliders 
-        WHERE position LIKE 'homepage%' AND status = 'active' AND is_visible = true 
-        ORDER BY sort_order
-      `),
-
-      client.execute(`
         SELECT * FROM products
         WHERE is_best_seller = true AND status = 'active'
         ORDER BY sort_order LIMIT 10
@@ -82,7 +76,6 @@ const getAppData = async (req, res) => {
     );
 
     const [
-      [slidersHomepage],
       [bestDealProducts],
       [allCategories],
       [homeAppliances],
@@ -91,7 +84,8 @@ const getAppData = async (req, res) => {
       [allProducts],
     ] = await Promise.all(queryPromises);
 
-    const safe = (data) => (Array.isArray(data) ? data : []);
+    const safe = (data) =>
+      Array.isArray(data) || typeof data === "object" ? data : [];
 
     return res.status(200).json({
       success: true,
@@ -100,10 +94,9 @@ const getAppData = async (req, res) => {
         topSlider: safe(topSlider),
         middleSlider: safe(midSlider),
         banner1: safe(bottomSlider),
-        slidersHomepage: safe(slidersHomepage),
         featuredProducts: safe(featuredProducts),
-        categories: safe(allCategories),
-        categoriesAgain: safe(allCategories),
+        categories0: safe(allCategories),
+        categories1: safe(allCategories),
         homeAppliances: safe(homeAppliances),
         sliderHomeAppliances: safe(midSlider),
         bestDeals: safe(bestDealProducts),
@@ -111,7 +104,7 @@ const getAppData = async (req, res) => {
         banner3: safe(bottomSlider),
         moreHomeAppliances: safe(homeAppliances),
         brands: safe(brands),
-        categoriesFinal: safe(allCategories),
+        categories2: safe(allCategories),
         allProducts: safe(allProducts),
       },
     });
