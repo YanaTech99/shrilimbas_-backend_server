@@ -7,7 +7,7 @@ const getSlidersByPosition = async (position) => {
     [position]
   );
 
-  if (!slider.length) return null;
+  if (!slider.length) return [];
 
   const [items] = await client.query(
     `SELECT * FROM slider_items WHERE slider_id = ? AND is_active = true ORDER BY sort_order`,
@@ -84,8 +84,14 @@ const getAppData = async (req, res) => {
       [allProducts],
     ] = await Promise.all(queryPromises);
 
-    const safe = (data) =>
-      Array.isArray(data) || typeof data === "object" ? data : [];
+    const safe = (data) => {
+      if (data === null) {
+        console.log(data);
+        return [];
+      }
+
+      return Array.isArray(data) || typeof data === "object" ? data : [];
+    };
 
     return res.status(200).json({
       success: true,

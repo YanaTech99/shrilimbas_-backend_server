@@ -258,3 +258,168 @@ CREATE TABLE slider_items (
 
   FOREIGN KEY (slider_id) REFERENCES sliders(id) ON DELETE CASCADE
 );
+
+CREATE TABLE delivery_boys (
+  id SERIAL PRIMARY KEY,
+
+  user_id CHAR(36) NOT NULL,
+  CONSTRAINT fk_delivery_boy_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+
+  first_name VARCHAR(100),
+  last_name VARCHAR(100),
+  email VARCHAR(255),
+  alternate_phone VARCHAR(20),
+  phone_verified BOOLEAN DEFAULT FALSE,
+  email_verified BOOLEAN DEFAULT FALSE,
+  profile_image_url VARCHAR(512),
+  date_of_birth DATE,
+  gender VARCHAR(10),
+
+  address TEXT,
+  city VARCHAR(100),
+  state VARCHAR(100),
+  country VARCHAR(100),
+  postal_code VARCHAR(20),
+  latitude DECIMAL(10,7),
+  longitude DECIMAL(10,7),
+
+  is_active BOOLEAN DEFAULT TRUE,
+  status VARCHAR(20) DEFAULT 'AVAILABLE', -- AVAILABLE, OFFLINE, BLOCKED, ON_DELIVERY
+
+  last_active_at TIMESTAMP,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+  -- Vehicle Info
+  vehicle_type VARCHAR(50),
+  vehicle_number VARCHAR(30),
+  vehicle_model VARCHAR(100),
+  vehicle_color VARCHAR(30),
+  vehicle_insurance_number VARCHAR(100),
+  vehicle_insurance_validity DATE,
+  driving_license_number VARCHAR(50),
+  driving_license_expiry DATE,
+
+  -- Banking Info
+  bank_account_holder_name VARCHAR(255),
+  bank_account_number VARCHAR(50),
+  bank_name VARCHAR(255),
+  bank_branch VARCHAR(255),
+  bank_ifsc_code VARCHAR(20),
+
+  -- Performance
+  total_deliveries INT DEFAULT 0,
+  rating DECIMAL(3,2) DEFAULT 5.00,
+  total_earnings DECIMAL(12,2) DEFAULT 0.00,
+  last_payout_at TIMESTAMP,
+
+  -- Misc
+  notes TEXT
+);
+
+CREATE TABLE customers (
+  id CHAR(36) PRIMARY KEY, -- FK to users(id)
+  
+  full_name VARCHAR(255),
+  email VARCHAR(255),
+  gender VARCHAR(10),
+  date_of_birth DATE,
+  profile_image_url VARCHAR(512),
+  
+  alternate_phone VARCHAR(20),
+  
+  default_shipping_address_id CHAR(36),
+  default_billing_address_id CHAR(36),
+  
+  loyalty_points INT DEFAULT 0,
+  preferred_language VARCHAR(10) DEFAULT 'en',
+  preferred_currency VARCHAR(10) DEFAULT 'INR',
+  referral_code VARCHAR(20) UNIQUE,
+  referred_by_code VARCHAR(20),
+  
+  notes TEXT,
+  
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  
+  CONSTRAINT fk_customers_user FOREIGN KEY (id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE orders (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  order_number VARCHAR(50) UNIQUE NOT NULL,
+
+  customer_id CHAR(36) NOT NULL,
+  shop_id INT NOT NULL,
+  delivery_boy_id INT,
+
+  order_status VARCHAR(50) DEFAULT 'pending', -- e.g., pending, shipped, delivered, cancelled
+  order_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  delivery_date TIMESTAMP,
+
+  delivery_window JSON, -- Use JSON instead of JSONB in MySQL
+  delivery_address TEXT NOT NULL,
+  delivery_city VARCHAR(100),
+  delivery_state VARCHAR(100),
+  delivery_country VARCHAR(100),
+  delivery_postal_code VARCHAR(20),
+  delivery_latitude DECIMAL(10,7),
+  delivery_longitude DECIMAL(10,7),
+  delivery_instructions TEXT,
+
+  payment_method VARCHAR(50), -- e.g., COD, Razorpay, Stripe
+  payment_status VARCHAR(50) DEFAULT 'unpaid',
+  payment_id VARCHAR(255),
+  payment_metadata JSON,
+
+  sub_total DECIMAL(12,2),
+  discount_amount DECIMAL(12,2) DEFAULT 0,
+  tax_amount DECIMAL(12,2) DEFAULT 0,
+  shipping_fee DECIMAL(12,2) DEFAULT 0,
+  total_amount DECIMAL(12,2) GENERATED ALWAYS AS 
+    (sub_total - discount_amount + tax_amount + shipping_fee) STORED,
+
+  coupon_code VARCHAR(50),
+  coupon_discount DECIMAL(12,2) DEFAULT 0,
+
+  currency VARCHAR(10) DEFAULT 'INR',
+  notes TEXT,
+  status_history JSON, -- store as array of status logs
+
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+  CONSTRAINT fk_order_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE,
+  CONSTRAINT fk_order_shop FOREIGN KEY (shop_id) REFERENCES shops(id) ON DELETE CASCADE,
+  CONSTRAINT fk_order_delivery_boy FOREIGN KEY (delivery_boy_id) REFERENCES delivery_boys(id) ON DELETE SET NULL
+);
+
+CREATE TABLE order_items (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+
+  order_id INT NOT NULL,
+  product_id INT NOT NULL,
+  product_variant_id INT,
+
+  quantity INT NOT NULL,
+
+  price_per_unit DECIMAL(12,2) NOT NULL,
+  discount_per_unit DECIMAL(12,2) DEFAULT 0,
+  tax_per_unit DECIMAL(12,2) DEFAULT 0,
+
+  total_price DECIMAL(12,2) GENERATED ALWAYS AS 
+    ((price_per_unit - discount_per_unit + tax_per_unit) * quantity) STORED,
+
+  sku VARCHAR(50),
+  product_snapshot JSON, -- store product info at time of order
+
+  notes TEXT,
+
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+  CONSTRAINT fk_order_item_order FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
+  CONSTRAINT fk_order_item_product FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_order_item_variant FOREIGN KEY (product_variant_id) REFERENCES product_variants(id) ON DELETE SET NULL
+);
+

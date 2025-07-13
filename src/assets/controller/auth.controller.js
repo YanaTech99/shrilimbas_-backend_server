@@ -60,7 +60,9 @@ const loginViaPhone = async (req, res) => {
       }
 
       const [profileInsertResult] = await client.execute(
-        `INSERT INTO ${profileTable} (user_id, name, email) VALUES (?, 'Guest', 'example@example.com')`,
+        `INSERT INTO ${profileTable} (${
+          user_type === "CUSTOMER" ? "id" : "user_id"
+        }, name, email) VALUES (?, 'Guest', 'example@example.com')`,
         [newUserRows[0].id]
       );
 
