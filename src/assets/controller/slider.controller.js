@@ -138,4 +138,55 @@ const addSlider = async (req, res) => {
   }
 };
 
-export { addSlider };
+const deleteSlider = async (req, res) => {
+  const { id: userId, user_type } = req.user;
+  if (user_type !== "VENDOR") {
+    return res.status(403).json({
+      success: false,
+      message: "Forbidden: Only vendors can delete sliders.",
+    });
+  }
+
+  const [shopId] = await pool.query(`SELECT id FROM shops WHERE user_id = ?`, [
+    userId,
+  ]);
+  if (!shopId || !shopId[0]) {
+    return res.status(404).json({
+      success: false,
+      message: "Shop not found for this vendor.",
+    });
+  }
+
+  const client = await pool.getConnection();
+
+  try {
+    const { sliderId } = req.body;
+    const [result] = await client.query(
+      `DELETE FROM sliders WHERE id = ? AND shop_id = ?`,
+      [sliderId, shopId[0].id]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Slider not found.",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Slider deleted successfully.",
+    });
+  } catch (err) {
+    console.error("Delete slider error:", err.message);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to delete slider.",
+      error: err.message,
+    });
+  } finally {
+    client.release();
+  }
+};
+
+export { addSlider, deleteSlider };
