@@ -20,6 +20,34 @@ const getSlidersByPosition = async (position) => {
   };
 };
 
+const modifyProductResponse = async (data) => {
+  const modifiedData = await Promise.all(
+    data.map(async (product) => {
+      const product_id = product.id;
+
+      const [categories] = await pool.execute(
+        `
+        SELECT title FROM categories
+        WHERE id IN (
+          SELECT category_id FROM product_categories
+          WHERE product_id = ?
+        )
+      `,
+        [product_id]
+      );
+
+      const categoriesArray = categories.map((category) => category.title);
+      return {
+        ...product,
+        categories: categoriesArray,
+        finalAmmount: product.selling_price,
+      };
+    })
+  );
+
+  return modifiedData;
+};
+
 const getAppData = async (req, res) => {
   const client = await pool.getConnection();
 
@@ -55,7 +83,7 @@ const getAppData = async (req, res) => {
       client.execute(`
         SELECT * FROM products
         WHERE is_featured = true AND status = 'active'
-        ORDER BY sort_order LIMIT 10
+        ORDER BY sort_order LIMIT 1
       `),
 
       client.execute(`
@@ -101,7 +129,7 @@ const getAppData = async (req, res) => {
         categories0: safe(allCategories),
         NewArrivalSlider: safe(midSlider),
         banner1: safe(bottomSlider),
-        featuredProducts: safe(featuredProducts),
+        featuredProducts: await modifyProductResponse(featuredProducts),
         banner2: safe(bottomSlider),
         homeAppliances: safe(homeAppliances),
         banner3: safe(bottomSlider),
