@@ -5,8 +5,7 @@ const getPaginatedCategories = async (req, res) => {
     const {
       page = 1,
       limit = 10,
-      status,
-      title,
+      status = "active",
       parent_id,
       search,
       sort_by = "sort_order",
@@ -21,11 +20,6 @@ const getPaginatedCategories = async (req, res) => {
     if (status) {
       whereClauses.push("status = ?");
       values.push(status);
-    }
-
-    if (title) {
-      whereClauses.push("title LIKE ?");
-      values.push(`%${title}%`);
     }
 
     if (parent_id) {
@@ -83,7 +77,7 @@ const getPaginatedBrands = async (req, res) => {
     const {
       page = 1,
       limit = 10,
-      status,
+      status = "active",
       title,
       search,
       sort_by = "sort_order",
@@ -186,7 +180,7 @@ const getPaginatedProducts = async (req, res) => {
     const [products] = await pool.execute(
       `SELECT
         p.id, p.product_name, p.slug, p.thumbnail, p.mrp, p.selling_price,
-        b.name AS brand
+        b.title AS brand
       FROM products p
       JOIN brands b ON p.brand_id = b.id
       ${whereSQL}
