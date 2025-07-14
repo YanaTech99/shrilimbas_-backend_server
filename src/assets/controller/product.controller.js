@@ -144,7 +144,7 @@ const getPaginatedBrands = async (req, res) => {
 };
 
 const getPaginatedProducts = async (req, res) => {
-  const { page = 1, limit = 10, search, category_id, brand_id } = req.query;
+  const { page = 1, limit = 10, search, category_id } = req.query;
 
   const offset = (parseInt(page) - 1) * parseInt(limit);
   const filters = [
@@ -161,32 +161,17 @@ const getPaginatedProducts = async (req, res) => {
       values.push(`%${search}%`, `%${search}%`);
     }
 
-    if (brand_id) {
-      filters.push("p.brand_id = ?");
-      values.push(brand_id);
-    }
-
     const whereSQL = filters.length ? `WHERE ${filters.join(" AND ")}` : "";
 
-    // Total count
-    const [countResult] = await pool.execute(
-      `SELECT COUNT(*) AS total FROM products p ${whereSQL}`,
-      values
-    );
-
-    const total = countResult[0].total;
-
     // Fetch paginated products
-    const [products] = await pool.execute(
+    let [products] = await pool.execute(
       `SELECT
-        p.id, p.product_name, p.slug, p.thumbnail, p.mrp, p.selling_price,
-        b.title AS brand
+        p.id, p.product_name, p.slug, p.thumbnail, p.mrp, p.selling_price, p.short_description, p.long_description, p.specifications, p.tags, p.attributes, p.custom_fields
       FROM products p
-      JOIN brands b ON p.brand_id = b.id
       ${whereSQL}
       ORDER BY p.created_at DESC
-      LIMIT ? OFFSET ?`,
-      [...values, parseInt(limit), offset]
+      LIMIT ${parseInt(limit)} OFFSET ${offset}`,
+      [...values]
     );
 
     if (products.length === 0) {
@@ -201,7 +186,7 @@ const getPaginatedProducts = async (req, res) => {
 
     const productIds = products.map((p) => p.id);
 
-    // Optional: filter by category
+    // filter by category
     if (category_id) {
       const [categoryFiltered] = await pool.execute(
         `SELECT DISTINCT product_id FROM product_categories WHERE category_id = ?`,
@@ -244,6 +229,9 @@ const getPaginatedProducts = async (req, res) => {
       variantMap[variant.product_id].push(variant);
     }
 
+    // Total count for pagination
+    const total = products.length;
+
     // Assemble response
     const response = products.map((product) => ({
       id: product.id,
@@ -255,6 +243,12 @@ const getPaginatedProducts = async (req, res) => {
       brand: product.brand,
       categories: categoryMap[product.id] || [],
       variants: variantMap[product.id] || [],
+      short_description: product.short_description,
+      long_description: product.long_description,
+      specifications: product.specifications,
+      tags: product.tags,
+      attributes: product.attributes,
+      custom_fields: product.custom_fields,
     }));
 
     return res.status(200).json({
@@ -262,6 +256,7 @@ const getPaginatedProducts = async (req, res) => {
       total,
       page: parseInt(page),
       limit: parseInt(limit),
+      totalPages: Math.ceil(total / parseInt(limit)),
       data: response,
     });
   } catch (err) {

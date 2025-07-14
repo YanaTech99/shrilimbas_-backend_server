@@ -25,7 +25,13 @@ const modifyProductResponse = async (data) => {
     data.map(async (product) => {
       const product_id = product.id;
 
-      const fields = ["specifications", "tags", "attributes", "custom_fields"];
+      const fields = [
+        "specifications",
+        "tags",
+        "attributes",
+        "custom_fields",
+        "gallery_images",
+      ];
 
       for (const field of fields) {
         if (product[field]) {
@@ -55,7 +61,7 @@ const modifyProductResponse = async (data) => {
       };
     })
   );
-  console.log(modifiedData);
+
   return modifiedData;
 };
 
