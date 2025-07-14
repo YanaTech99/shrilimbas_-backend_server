@@ -1,8 +1,19 @@
 import pool from "../db/index.js";
 import { generateAccessToken } from "../utils/jwt.util.js";
+import { sanitizeInput, validateUserInput } from "../utils/validation.util.js";
+import { generateOTP } from "../utils/generateOTP.util.js";
 
-const loginViaPhone = async (req, res) => {
-  const { phone_number, user_type } = req.body;
+const sendOTP = async (req, res) => {
+  const modifiedInput = sanitizeInput(req.body);
+  const { errors } = validateUserInput({ phone: modifiedInput.phone_number });
+  if (Object.entries(errors).length > 0) {
+    return res.status(400).json({
+      success: false,
+      errors,
+    });
+  }
+
+  const { phone_number, user_type } = modifiedInput;
 
   if (!phone_number) {
     return res.status(400).json({
@@ -26,6 +37,45 @@ const loginViaPhone = async (req, res) => {
     });
   }
 
+  const otp = generateOTP();
+  console.log("Generated OTP:", otp);
+
+  // const sendOTP
+};
+
+const loginViaPhone = async (req, res) => {
+  const modifiedInput = sanitizeInput(req.body);
+  const { errors } = validateUserInput({ phone: modifiedInput.phone_number });
+  if (Object.entries(errors).length > 0) {
+    return res.status(400).json({
+      success: false,
+      errors,
+    });
+  }
+
+  const { phone_number, user_type } = modifiedInput;
+
+  if (!phone_number) {
+    return res.status(400).json({
+      success: false,
+      error: "Phone number is required",
+    });
+  }
+
+  if (!user_type) {
+    return res.status(400).json({
+      success: false,
+      error: "User type is required",
+    });
+  }
+
+  const validUserTypes = ["CUSTOMER", "VENDOR", "DELIVERY_BOY"];
+  if (!validUserTypes.includes(user_type)) {
+    return res.status(400).json({
+      success: false,
+      error: "Invalid user type",
+    });
+  }
   const client = await pool.getConnection();
 
   try {
