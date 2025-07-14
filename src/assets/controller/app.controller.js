@@ -25,6 +25,17 @@ const modifyProductResponse = async (data) => {
     data.map(async (product) => {
       const product_id = product.id;
 
+      const fields = ["specifications", "tags", "attributes", "custom_fields"];
+
+      for (const field of fields) {
+        if (product[field]) {
+          product[field] =
+            typeof product[field] === "string"
+              ? JSON.parse(product[field])
+              : product[field];
+        }
+      }
+
       const [categories] = await pool.execute(
         `
         SELECT title FROM categories
@@ -44,7 +55,7 @@ const modifyProductResponse = async (data) => {
       };
     })
   );
-
+  console.log(modifiedData);
   return modifiedData;
 };
 
@@ -83,7 +94,7 @@ const getAppData = async (req, res) => {
       client.execute(`
         SELECT * FROM products
         WHERE is_featured = true AND status = 'active'
-        ORDER BY sort_order LIMIT 1
+        ORDER BY sort_order
       `),
 
       client.execute(`
@@ -131,13 +142,13 @@ const getAppData = async (req, res) => {
         banner1: safe(bottomSlider),
         featuredProducts: await modifyProductResponse(featuredProducts),
         banner2: safe(bottomSlider),
-        homeAppliances: safe(homeAppliances),
+        homeAppliances: await modifyProductResponse(homeAppliances),
         banner3: safe(bottomSlider),
-        bestDeals: safe(bestDealProducts),
+        bestDeals: await modifyProductResponse(bestDealProducts),
         banner4: safe(bottomSlider),
-        moreHomeAppliances: safe(homeAppliances),
+        moreHomeAppliances: await modifyProductResponse(homeAppliances),
         brands: safe(brands),
-        allProducts: safe(allProducts),
+        allProducts: await modifyProductResponse(allProducts),
       },
     });
   } catch (error) {
