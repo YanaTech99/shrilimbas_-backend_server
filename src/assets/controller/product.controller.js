@@ -165,9 +165,7 @@ const getPaginatedProducts = async (req, res) => {
 
     // Fetch paginated products
     let [products] = await pool.execute(
-      `SELECT
-        p.id, p.product_name, p.slug, p.thumbnail, p.mrp, p.selling_price, p.short_description, p.long_description, p.specifications, p.tags, p.attributes, p.custom_fields
-      FROM products p
+      `SELECT p.* FROM products p
       ${whereSQL}
       ORDER BY p.created_at DESC
       LIMIT ${parseInt(limit)} OFFSET ${offset}`,
@@ -233,23 +231,29 @@ const getPaginatedProducts = async (req, res) => {
     const total = products.length;
 
     // Assemble response
-    const response = products.map((product) => ({
-      id: product.id,
-      product_name: product.product_name,
-      slug: product.slug,
-      thumbnail: product.thumbnail,
-      mrp: product.mrp,
-      selling_price: product.selling_price,
-      brand: product.brand,
-      categories: categoryMap[product.id] || [],
-      variants: variantMap[product.id] || [],
-      short_description: product.short_description,
-      long_description: product.long_description,
-      specifications: product.specifications,
-      tags: product.tags,
-      attributes: product.attributes,
-      custom_fields: product.custom_fields,
-    }));
+    const response = products.map((product) => {
+      const fields = [
+        "specifications",
+        "tags",
+        "attributes",
+        "custom_fields",
+        "gallery_images",
+      ];
+
+      for (const field of fields) {
+        if (product[field]) {
+          product[field] =
+            typeof product[field] === "string"
+              ? JSON.parse(product[field])
+              : product[field];
+        }
+      }
+
+      return {
+        ...product,
+        finalAmmount: product.selling_price,
+      };
+    });
 
     return res.status(200).json({
       success: true,
