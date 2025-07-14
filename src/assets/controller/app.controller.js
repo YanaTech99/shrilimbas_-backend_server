@@ -43,7 +43,7 @@ const getAppData = async (req, res) => {
       client.execute(`
         SELECT * FROM categories
         WHERE status = 'active' AND parent_id IS NULL
-        ORDER BY sort_order
+        ORDER BY sort_order LIMIT 10
       `),
 
       client.execute(`
@@ -98,16 +98,17 @@ const getAppData = async (req, res) => {
       message: "App data fetched successfully",
       data: {
         topSlider: safe(topSlider),
-        middleSlider: safe(midSlider),
+        categories0: safe(allCategories),
+        NewArrivalSlider: safe(midSlider),
         banner1: safe(bottomSlider),
         featuredProducts: safe(featuredProducts),
-        categories0: safe(allCategories),
+        featuresSlider: safe(midSlider),
+        banner2: safe(bottomSlider),
         categories1: safe(allCategories),
         homeAppliances: safe(homeAppliances),
-        sliderHomeAppliances: safe(midSlider),
-        bestDeals: safe(bestDealProducts),
-        banner2: safe(bottomSlider),
         banner3: safe(bottomSlider),
+        bestDeals: safe(bestDealProducts),
+        banner4: safe(bottomSlider),
         moreHomeAppliances: safe(homeAppliances),
         brands: safe(brands),
         categories2: safe(allCategories),
