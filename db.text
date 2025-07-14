@@ -423,3 +423,35 @@ CREATE TABLE order_items (
   CONSTRAINT fk_order_item_variant FOREIGN KEY (product_variant_id) REFERENCES product_variants(id) ON DELETE SET NULL
 );
 
+CREATE TABLE cart_items (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+
+  customer_id CHAR(36) NOT NULL,
+  product_id INT NOT NULL,
+  product_variant_id INT,
+  shop_id INT NOT NULL,
+
+  quantity INT NOT NULL CHECK (quantity > 0),
+
+  price_per_unit DECIMAL(12,2) NOT NULL,
+  discount_per_unit DECIMAL(12,2) DEFAULT 0,
+  tax_per_unit DECIMAL(12,2) DEFAULT 0,
+  
+  total_price DECIMAL(12,2) GENERATED ALWAYS AS 
+    ((price_per_unit - discount_per_unit + tax_per_unit) * quantity) STORED,
+
+  sku VARCHAR(50),
+  product_snapshot JSON, -- Product info at time added to cart
+  added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+  is_saved_for_later BOOLEAN DEFAULT FALSE,
+  is_selected BOOLEAN DEFAULT TRUE, -- If selected for checkout
+
+  CONSTRAINT fk_cart_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE,
+  CONSTRAINT fk_cart_product FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_cart_variant FOREIGN KEY (product_variant_id) REFERENCES product_variants(id) ON DELETE SET NULL,
+  CONSTRAINT fk_cart_shop FOREIGN KEY (shop_id) REFERENCES shops(id) ON DELETE CASCADE,
+
+  UNIQUE KEY uq_cart_unique (customer_id, product_id, product_variant_id)
+);

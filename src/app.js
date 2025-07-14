@@ -35,6 +35,7 @@ import shopRoutes from "./assets/router/shop.route.js";
 import sliderRoutes from "./assets/router/slider.route.js";
 import productRoutes from "./assets/router/product.route.js";
 import orderRoutes from "./assets/router/order.route.js";
+import cartRoutes from "./assets/router/cart.route.js";
 
 // define routes
 app.use("/api/auth", authRoutes);
@@ -43,5 +44,6 @@ app.use("/api/shop", shopRoutes);
 app.use("/api/slider", sliderRoutes);
 app.use("/api/products", productRoutes);
 app.use("/api/orders", orderRoutes);
+app.use("/api/cart", cartRoutes);
 
 export default app;
