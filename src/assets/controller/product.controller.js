@@ -9,7 +9,7 @@ const getPaginatedCategories = async (req, res) => {
       parent_id,
       search,
       sort_by = "sort_order",
-      order = "ASC",
+      order = "DESC",
     } = req.query;
 
     const offset = (parseInt(page) - 1) * parseInt(limit);
