@@ -7,6 +7,13 @@ const addToCart = async (req, res) => {
     [user_id]
   );
 
+  if (!customer_id || customer_id.length === 0) {
+    return res.status(404).json({
+      success: false,
+      error: "Customer not found",
+    });
+  }
+
   const { product_id, product_variant_id = null, quantity } = req.body;
 
   if (!product_id || !quantity || quantity < 1) {
@@ -166,12 +173,31 @@ const deleteFromCart = async (req, res) => {
     [user_id]
   );
 
+  if (!customer_id || customer_id.length === 0) {
+    return res.status(404).json({
+      success: false,
+      error: "Customer not found",
+    });
+  }
+
   const { id: cart_item_id } = req.body;
 
-  const connection = await pool.getConnection();
+  const client = await pool.getConnection();
 
   try {
-    const [result] = await connection.execute(
+    const [cartItem] = await client.execute(
+      `SELECT * FROM cart_items WHERE id = ? AND customer_id = ?`,
+      [cart_item_id, customer_id[0].id]
+    );
+
+    if (!cartItem || cartItem.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: "Cart item not found",
+      });
+    }
+
+    const [result] = await client.execute(
       `DELETE FROM cart_items WHERE id = ? AND customer_id = ?`,
       [cart_item_id, customer_id[0].id]
     );
@@ -179,7 +205,7 @@ const deleteFromCart = async (req, res) => {
     if (result.affectedRows === 0) {
       return res.status(404).json({
         success: false,
-        error: "Cart item not found",
+        error: "Failed to delete cart item",
       });
     }
 
@@ -194,7 +220,7 @@ const deleteFromCart = async (req, res) => {
       error: "Internal server error",
     });
   } finally {
-    connection.release();
+    client.release();
   }
 };
 
@@ -204,6 +230,13 @@ const getCart = async (req, res) => {
     `SELECT id FROM customers WHERE id = ?`,
     [user_id]
   );
+
+  if (!customer_id || customer_id.length === 0) {
+    return res.status(404).json({
+      success: false,
+      error: "Customer not found",
+    });
+  }
 
   const connection = await pool.getConnection();
 
