@@ -71,6 +71,53 @@ const sendOTP = async (req, res) => {
   const message = `${deviceInfoMsg}. Your OTP is ${otp}.`;
 
   try {
+    const [checkOTPRecords] = await pool.execute(
+      `
+      SELECT id FROM otp_requests
+      WHERE phone_number = ?
+      `,
+      [phone_number]
+    );
+
+    if (checkOTPRecords.length > 0) {
+      //update everything
+      const [updateResult] = await pool.execute(
+        `
+        UPDATE otp_requests
+        SET otp_code = ?,
+        user_agent = ?, browser_name = ?, browser_version = ?,
+        os_name = ?, os_version = ?, device_type = ?,
+        ip_address = ?, expires_at = ?
+        WHERE phone_number = ?
+        `,
+        [
+          hashedOtp,
+          userAgent,
+          browserName,
+          browserVersion,
+          osName,
+          osVersion,
+          deviceType,
+          ipAddress,
+          expiry,
+          phone_number,
+        ]
+      );
+
+      if (!updateResult || updateResult.affectedRows === 0) {
+        return res.status(500).json({
+          success: false,
+          message: "Failed to send OTP",
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: "OTP resent successfully",
+        dev_otp: otp,
+      });
+    }
+
     // Insert into database
     const [result] = await pool.execute(
       `
@@ -230,79 +277,4 @@ const loginViaPhone = async (req, res) => {
   }
 };
 
-const verifyOTP = async (req, res) => {
-  const { phone_number, otp_code } = req.body;
-
-  try {
-    // Fetch the latest OTP record for the phone number
-    const [rows] = await pool.execute(
-      `
-      SELECT * FROM otp_requests
-      WHERE phone_number = ?
-      ORDER BY created_at DESC
-      LIMIT 1
-    `,
-      [phone_number]
-    );
-
-    const otpRecord = rows[0];
-
-    if (!otpRecord) {
-      return res.status(400).json({ message: "No OTP found for this number." });
-    }
-
-    // Check if max attempts exceeded
-    if (otpRecord.attempt_count >= 3) {
-      await pool.execute(`DELETE FROM otp_requests WHERE phone_number = ?`, [
-        phone_number,
-      ]);
-      return res
-        .status(429)
-        .json({ message: "Too many attempts. Try again later." });
-    }
-
-    // Update attempt count
-    await pool.execute(
-      `
-      UPDATE otp_requests
-      SET attempt_count = attempt_count + 1
-      WHERE id = ?
-    `,
-      [otpRecord.id]
-    );
-
-    // Check if already used
-    if (otpRecord.is_used) {
-      return res.status(400).json({ message: "OTP has already been used." });
-    }
-
-    // Check if expired
-    const now = new Date();
-    if (new Date(otpRecord.expires_at) < now) {
-      return res.status(400).json({ message: "OTP has expired." });
-    }
-
-    // Check OTP match
-    if (otpRecord.otp_code !== otp_code) {
-      return res.status(400).json({ message: "Invalid OTP." });
-    }
-
-    // Mark OTP as used and verified
-    await pool.execute(
-      `
-      UPDATE otp_requests
-      SET is_used = TRUE, is_verified = TRUE
-      WHERE id = ?
-    `,
-      [otpRecord.id]
-    );
-
-    // You can proceed to log in the user or create an account
-    return res.status(200).json({ message: "OTP verified successfully." });
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json({ message: "Server error." });
-  }
-};
-
-export { loginViaPhone, sendOTP, verifyOTP };
+export { loginViaPhone, sendOTP };

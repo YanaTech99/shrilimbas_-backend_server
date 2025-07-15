@@ -325,4 +325,6 @@ const getOrderByCustomerID = async (req, res) => {
   }
 };
 
+// const getOrderByShopID = async (req, res) => {};
+
 export { placeOrder, getOrderByCustomerID };
