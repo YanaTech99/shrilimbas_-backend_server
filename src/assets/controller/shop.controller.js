@@ -697,13 +697,6 @@ const addProducts = async (req, res) => {
       }
     }
 
-    // Remove local files
-    for (const filePath of localFiles) {
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-      }
-    }
-
     console.error("Error adding product:", error.message);
     return res.status(500).json({
       success: false,
@@ -711,6 +704,13 @@ const addProducts = async (req, res) => {
       error: error.message,
     });
   } finally {
+    // Remove local files
+    for (const filePath of localFiles) {
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+    }
+
     connection.release();
   }
 };

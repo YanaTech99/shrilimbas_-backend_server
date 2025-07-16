@@ -239,6 +239,38 @@ const loginViaPhone = async (req, res) => {
         [newUserRows[0].id]
       );
 
+      if (profileInsertResult.affectedRows === 0) {
+        await client.rollback();
+        return res.status(500).json({
+          success: false,
+          message: "Failed to create user profile",
+        });
+      }
+
+      const [profileRows] = await client.execute(
+        `SELECT * FROM ${profileTable} WHERE ${
+          user_type === "CUSTOMER" ? "id" : "user_id"
+        } = ?`,
+        [newUserRows[0].id]
+      );
+
+      //insert into address table
+      if (user_type !== "DELIVERY_BOY") {
+        let adressFor = user_type === "VENDOR" ? "shop_id" : "customer_id";
+        const [addressInsertResult] = await client.execute(
+          `INSERT INTO addresses (address_line1, city, state, postal_code, country, ${adressFor}) VALUES ('main address', 'city', 'state', '12345', 'country', ?)`,
+          [profileRows[0].id]
+        );
+
+        if (addressInsertResult.affectedRows === 0) {
+          await client.rollback();
+          return res.status(500).json({
+            success: false,
+            message: "Failed to create user address",
+          });
+        }
+      }
+
       user = newUserRows[0];
       message = "Welcome new user";
     } else {

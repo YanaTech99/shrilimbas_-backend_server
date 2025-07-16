@@ -36,14 +36,16 @@ import sliderRoutes from "./assets/router/slider.route.js";
 import productRoutes from "./assets/router/product.route.js";
 import orderRoutes from "./assets/router/order.route.js";
 import cartRoutes from "./assets/router/cart.route.js";
+import customerRoutes from "./assets/router/customer.route.js";
 
 // define routes
-app.use("/api/auth", authRoutes);
-app.use("/api/app", appRoutes);
-app.use("/api/shop", shopRoutes);
-app.use("/api/slider", sliderRoutes);
-app.use("/api/products", productRoutes);
-app.use("/api/orders", orderRoutes);
-app.use("/api/cart", cartRoutes);
+app.use("/api/v1/auth", authRoutes);
+app.use("/api/v1/app", appRoutes);
+app.use("/api/v1/shop", shopRoutes);
+app.use("/api/v1/slider", sliderRoutes);
+app.use("/api/v1/products", productRoutes);
+app.use("/api/v1/orders", orderRoutes);
+app.use("/api/v1/cart", cartRoutes);
+app.use("/api/v1/customer", customerRoutes);
 
 export default app;
