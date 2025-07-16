@@ -482,5 +482,39 @@ CREATE TABLE otp_requests (
     INDEX idx_created_at (created_at)
 );
 
+CREATE TABLE addresses (
+    id INT AUTO_INCREMENT PRIMARY KEY,
 
-// create delete slider and get slider with filters, update slider, send OTP, verify OTP
+    -- Foreign keys (only one of them should be NOT NULL per row)
+    customer_id char(36) NULL,
+    shop_id INT NULL,
+
+    -- Address details
+    address_line1 VARCHAR(255) NOT NULL,
+    address_line2 VARCHAR(255) DEFAULT NULL,
+    landmark VARCHAR(255) DEFAULT NULL,
+    city VARCHAR(100) NOT NULL,
+    state VARCHAR(100) NOT NULL,
+    postal_code VARCHAR(20) NOT NULL,
+    country VARCHAR(100) NOT NULL,
+
+    -- Geo-coordinates for mapping / delivery optimization
+    latitude DECIMAL(10,8) DEFAULT NULL,
+    longitude DECIMAL(11,8) DEFAULT NULL,
+
+    -- Metadata
+    address_type ENUM('billing', 'shipping', 'both') DEFAULT 'shipping',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    -- Constraints
+    CONSTRAINT fk_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE,
+    CONSTRAINT fk_shop FOREIGN KEY (shop_id) REFERENCES shops(id) ON DELETE CASCADE,
+    CONSTRAINT chk_customer_or_shop CHECK (
+        (customer_id IS NOT NULL AND shop_id IS NULL) OR
+        (customer_id IS NULL AND shop_id IS NOT NULL)
+    )
+);
+
+
+// create update profile for customers, add new address, update address, delete address, get addresses, get customer profile
