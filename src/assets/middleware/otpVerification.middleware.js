@@ -5,7 +5,7 @@ const verifyOTP = async (req, res, next) => {
   const { phone_number, otp_code } = req.body;
 
   if (otp_code === "123456") {
-    next();
+    return next();
   }
 
   try {
