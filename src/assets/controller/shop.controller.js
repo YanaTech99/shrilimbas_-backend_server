@@ -432,7 +432,7 @@ const addCategory = async (req, res) => {
 
 const getPaginatedCategories = async (req, res) => {
   const { id: user_id } = req.user;
-  const shop_id = await pool.execute(
+  const [shop_id] = await pool.execute(
     "SELECT id FROM shops WHERE user_id = ? AND status = 'ACTIVE' LIMIT 1",
     [user_id]
   );
@@ -440,7 +440,7 @@ const getPaginatedCategories = async (req, res) => {
   try {
     const {
       page = 1,
-      limit = 10,
+      limit,
       status,
       title,
       parent_id,
@@ -497,16 +497,21 @@ const getPaginatedCategories = async (req, res) => {
 
     // Fetch paginated categories
     const [categories] = await pool.execute(
-      `SELECT * FROM categories ${whereSQL} ORDER BY ${sort_by} ${order} LIMIT ? OFFSET ?`,
-      [...values, parseInt(limit), offset]
+      `SELECT * FROM categories ${whereSQL} ORDER BY ${sort_by} ${order} ${
+        limit ? `LIMIT ${limit} OFFSET ${parseInt(offset)}` : ""
+      }`,
+      [...values]
     );
 
     return res.status(200).json({
       success: true,
-      total,
-      page: parseInt(page),
-      per_page: parseInt(limit),
-      total_pages: totalPages,
+      message: "Categories fetched successfully.",
+      pagination: {
+        total,
+        page: parseInt(page),
+        per_page: parseInt(limit),
+        total_pages: totalPages,
+      },
       data: categories,
     });
   } catch (error) {
@@ -951,7 +956,6 @@ const updateProduct = async (req, res) => {
 const getPaginatedproducts = async (req, res) => {
   const { id: user_id, user_type } = req.user;
 
-  console.log(user_type);
   if (user_type !== "VENDOR") {
     return res.status(403).json({
       success: false,
@@ -1028,6 +1032,7 @@ const getPaginatedproducts = async (req, res) => {
     if (productRows.length === 0) {
       return res.json({
         success: true,
+        message: "No products found.",
         total,
         page: parseInt(page),
         limit: parseInt(limit),
@@ -1095,10 +1100,14 @@ const getPaginatedproducts = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      total,
-      page: parseInt(page),
-      limit: parseInt(limit),
+      message: "Products fetched successfully.",
       data: productRows,
+      pagination: {
+        total,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        totalPages: Math.ceil(total / limit),
+      },
     });
   } catch (error) {
     console.error("Error fetching products:", error.message);

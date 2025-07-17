@@ -517,4 +517,4 @@ CREATE TABLE addresses (
 );
 
 
-// create update profile for customers, add new address, update address, delete address, get addresses, get customer profile
+// TODO: handle cart items, send empty array in customers data where null, send full cart data in dashboard api, set customers info to empty 
