@@ -951,6 +951,7 @@ const updateProduct = async (req, res) => {
 const getPaginatedproducts = async (req, res) => {
   const { id: user_id, user_type } = req.user;
 
+  console.log(user_type);
   if (user_type !== "VENDOR") {
     return res.status(403).json({
       success: false,
@@ -1018,16 +1019,10 @@ const getPaginatedproducts = async (req, res) => {
 
     // Step 3: Fetch paginated products
     const [productRows] = await pool.execute(
-      `SELECT
-        p.id, p.product_name, p.slug, p.sku, p.thumbnail,
-        p.selling_price, p.mrp,
-        b.name AS brand
-       FROM products p
-       JOIN brands b ON p.brand_id = b.id
-       ${whereSQL}
-       ORDER BY p.created_at DESC
-       LIMIT ? OFFSET ?`,
-      [...values, parseInt(limit), offset]
+      `SELECT * FROM products p ${whereSQL} ORDER BY p.created_at DESC LIMIT ${parseInt(
+        limit
+      )} OFFSET ${offset}`,
+      [...values]
     );
 
     if (productRows.length === 0) {
@@ -1085,25 +1080,25 @@ const getPaginatedproducts = async (req, res) => {
     }
 
     // Step 7: Build final response
-    const data = productRows.map((product) => ({
-      id: product.id,
-      product_name: product.product_name,
-      slug: product.slug,
-      sku: product.sku,
-      thumbnail: product.thumbnail,
-      selling_price: product.selling_price,
-      mrp: product.mrp,
-      brand: product.brand,
-      categories: categoryMap[product.id] || [],
-      variants: variantMap[product.id] || [],
-    }));
+    // const data = productRows.map((product) => ({
+    //   id: product.id,
+    //   product_name: product.product_name,
+    //   slug: product.slug,
+    //   sku: product.sku,
+    //   thumbnail: product.thumbnail,
+    //   selling_price: product.selling_price,
+    //   mrp: product.mrp,
+    //   brand: product.brand,
+    //   categories: categoryMap[product.id] || [],
+    //   variants: variantMap[product.id] || [],
+    // }));
 
     return res.status(200).json({
       success: true,
       total,
       page: parseInt(page),
       limit: parseInt(limit),
-      data,
+      data: productRows,
     });
   } catch (error) {
     console.error("Error fetching products:", error.message);
