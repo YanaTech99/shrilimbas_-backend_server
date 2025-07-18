@@ -6,6 +6,7 @@ import bcrypt from "bcrypt";
 import { UAParser } from "ua-parser-js";
 
 const sendOTP = async (req, res) => {
+  const tenantId = req.tenantId; // tenant ID for DB connection
   if (!req.body.phone_number) {
     return res.status(400).json({
       success: false,
@@ -70,18 +71,20 @@ const sendOTP = async (req, res) => {
 
   const message = `${deviceInfoMsg}. Your OTP is ${otp}.`;
 
+  const client = await pool[tenantId].getConnection();
+
   try {
-    const [checkOTPRecords] = await pool.execute(
+    const [checkOTPRecords] = await client.execute(
       `
       SELECT id FROM otp_requests
-      WHERE phone_number = ?
+      WHERE phone_number = ? AND tenant_id = ?
       `,
-      [phone_number]
+      [phone_number, tenantId]
     );
 
     if (checkOTPRecords.length > 0) {
       //update everything
-      const [updateResult] = await pool.execute(
+      const [updateResult] = await client.execute(
         `
         UPDATE otp_requests
         SET otp_code = ?,
@@ -119,19 +122,20 @@ const sendOTP = async (req, res) => {
     }
 
     // Insert into database
-    const [result] = await pool.execute(
+    const [result] = await client.execute(
       `
       INSERT INTO otp_requests (
-        phone_number, otp_code,
+        phone_number, otp_code, tenant_id, 
         user_agent, browser_name, browser_version,
         os_name, os_version, device_type,
         ip_address, expires_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       [
         phone_number,
         hashedOtp,
+        tenantId,
         userAgent,
         browserName,
         browserVersion,
@@ -163,10 +167,13 @@ const sendOTP = async (req, res) => {
       success: false,
       message: "Internal server error. Failed to send OTP",
     });
+  } finally {
+    client.release();
   }
 };
 
 const loginViaPhone = async (req, res) => {
+  const tenantId = req.tenantId; // tenant ID for DB connection
   const modifiedInput = sanitizeInput(req.body);
   const { errors } = validateUserInput({ phone: modifiedInput.phone_number });
   if (Object.entries(errors).length > 0) {
@@ -199,7 +206,7 @@ const loginViaPhone = async (req, res) => {
       error: "Invalid user type",
     });
   }
-  const client = await pool.getConnection();
+  const client = await pool[tenantId].getConnection();
 
   try {
     await client.beginTransaction();
@@ -215,8 +222,8 @@ const loginViaPhone = async (req, res) => {
     if (!userRows || userRows.length === 0) {
       // Create new user
       const [insertResult] = await client.execute(
-        `INSERT INTO users (phone, user_type, full_name, is_active) VALUES (?, ?, 'Guest', 1)`,
-        [phone_number, user_type]
+        `INSERT INTO users (phone, user_type, tenant_id, is_active) VALUES (?, ?, ?, 1)`,
+        [phone_number, user_type, tenantId]
       );
 
       const [newUserRows] = await client.execute(
@@ -283,6 +290,7 @@ const loginViaPhone = async (req, res) => {
       id: user.id,
       phone: user.phone,
       user_type: user.user_type,
+      tenant_id: user.tenant_id,
     });
 
     await client.commit();

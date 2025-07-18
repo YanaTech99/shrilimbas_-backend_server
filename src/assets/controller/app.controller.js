@@ -1,6 +1,7 @@
-import pool from "../db/index.js";
+import pools from "../db/index.js";
 
-const getSlidersByPosition = async (position) => {
+const getSlidersByPosition = async (position, tenantId) => {
+  const pool = pools[tenantId];
   const client = await pool.getConnection();
   const [slider] = await client.query(
     `SELECT * FROM sliders WHERE position = ? AND status = 'active' AND is_visible = true ORDER BY sort_order LIMIT 1`,
@@ -20,7 +21,8 @@ const getSlidersByPosition = async (position) => {
   };
 };
 
-const modifyProductResponse = async (data) => {
+const modifyProductResponse = async (data, tenantId) => {
+  const pool = pools[tenantId];
   const modifiedData = await Promise.all(
     data.map(async (product) => {
       const product_id = product.id;
@@ -66,6 +68,8 @@ const modifyProductResponse = async (data) => {
 };
 
 const getAppData = async (req, res) => {
+  const tenantID = req.tenantId;
+  const pool = pools[tenantID];
   const client = await pool.getConnection();
 
   try {
@@ -75,7 +79,7 @@ const getAppData = async (req, res) => {
       "homepage_bottom",
     ];
     const sliderPromises = sliderPositions.map((position) =>
-      getSlidersByPosition(position)
+      getSlidersByPosition(position, tenantID)
     );
 
     const queryPromises = [
@@ -146,15 +150,21 @@ const getAppData = async (req, res) => {
         categories0: safe(allCategories),
         NewArrivalSlider: safe(midSlider),
         banner1: safe(bottomSlider),
-        featuredProducts: await modifyProductResponse(featuredProducts),
+        featuredProducts: await modifyProductResponse(
+          featuredProducts,
+          tenantID
+        ),
         banner2: safe(bottomSlider),
-        homeAppliances: await modifyProductResponse(homeAppliances),
+        homeAppliances: await modifyProductResponse(homeAppliances, tenantID),
         banner3: safe(bottomSlider),
-        bestDeals: await modifyProductResponse(bestDealProducts),
+        bestDeals: await modifyProductResponse(bestDealProducts, tenantID),
         banner4: safe(bottomSlider),
-        moreHomeAppliances: await modifyProductResponse(homeAppliances),
+        moreHomeAppliances: await modifyProductResponse(
+          homeAppliances,
+          tenantID
+        ),
         brands: safe(brands),
-        allProducts: await modifyProductResponse(allProducts),
+        allProducts: await modifyProductResponse(allProducts, tenantID),
       },
     });
   } catch (error) {

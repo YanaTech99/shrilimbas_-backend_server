@@ -2,6 +2,7 @@ import bcrypt from "bcrypt";
 import pool from "../db/index.js";
 
 const verifyOTP = async (req, res, next) => {
+  const tenantId = req.tenantId;
   const { phone_number, otp_code } = req.body;
 
   if (otp_code === "123456") {
@@ -13,11 +14,11 @@ const verifyOTP = async (req, res, next) => {
     const [rows] = await pool.execute(
       `
       SELECT * FROM otp_requests
-      WHERE phone_number = ?
+      WHERE phone_number = ? AND tenant_id = ?
       ORDER BY created_at DESC
       LIMIT 1
       `,
-      [phone_number]
+      [phone_number, tenantId]
     );
 
     const otpRecord = rows[0];
@@ -31,9 +32,10 @@ const verifyOTP = async (req, res, next) => {
 
     // Check if max attempts exceeded
     if (otpRecord.attempt_count >= 3) {
-      await pool.execute(`DELETE FROM otp_requests WHERE phone_number = ?`, [
-        phone_number,
-      ]);
+      await pool.execute(
+        `DELETE FROM otp_requests WHERE phone_number = ? AND`,
+        [phone_number, tenantId]
+      );
       return res.status(429).json({
         success: false,
         message: "Too many attempts. Try again later.",
@@ -52,9 +54,10 @@ const verifyOTP = async (req, res, next) => {
 
     // Check if already used
     if (otpRecord.is_used) {
-      await pool.execute(`DELETE FROM otp_requests WHERE phone_number = ?`, [
-        phone_number,
-      ]);
+      await pool.execute(
+        `DELETE FROM otp_requests WHERE phone_number = ? AND tenant_id = ?`,
+        [phone_number, tenantId]
+      );
       return res.status(400).json({
         success: false,
         message: "OTP has already been used.",
@@ -64,9 +67,10 @@ const verifyOTP = async (req, res, next) => {
     // Check if expired
     const now = new Date();
     if (new Date(otpRecord.expires_at) < now) {
-      await pool.execute(`DELETE FROM otp_requests WHERE phone_number = ?`, [
-        phone_number,
-      ]);
+      await pool.execute(
+        `DELETE FROM otp_requests WHERE phone_number = ? AND tenant_id = ?`,
+        [phone_number, tenantId]
+      );
       return res.status(400).json({
         success: false,
         message: "OTP has expired.",

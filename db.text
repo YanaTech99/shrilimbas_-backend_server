@@ -517,4 +517,6 @@ CREATE TABLE addresses (
 );
 
 
+// 18/7/2025: add tenant_id in otp_requests, users table and customise auth and dashboard routes accordingly
+
 // TODO: handle cart items, send empty array in customers data where null, send full cart data in dashboard api, set customers info to empty 

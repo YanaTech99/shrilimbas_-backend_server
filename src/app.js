@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
+import { multiTenantMiddleware } from "./assets/middleware/multiTenant.middlerware.js";
 
 const app = express();
 
@@ -39,7 +40,7 @@ import cartRoutes from "./assets/router/cart.route.js";
 import customerRoutes from "./assets/router/customer.route.js";
 
 // define routes
-app.use("/api/v1/auth", authRoutes);
+app.use("/api/v1/auth", multiTenantMiddleware, authRoutes);
 app.use("/api/v1/app", appRoutes);
 app.use("/api/v1/shop", shopRoutes);
 app.use("/api/v1/slider", sliderRoutes);
