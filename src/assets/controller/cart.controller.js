@@ -271,9 +271,7 @@ const getCart = async (req, res) => {
 
   try {
     const [result] = await connection.execute(
-      `SELECT id, product_id, product_variant_id, shop_id, quantity, 
-       price_per_unit, discount_per_unit, tax_per_unit, sku, product_snapshot
-       FROM cart_items WHERE customer_id = ?`,
+      `SELECT * FROM cart_items WHERE customer_id = ?`,
       [customer_id[0].id]
     );
 

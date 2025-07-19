@@ -47,6 +47,6 @@ app.use("/api/v1/slider", sliderRoutes);
 app.use("/api/v1/products", multiTenantMiddleware, productRoutes);
 app.use("/api/v1/orders", orderRoutes);
 app.use("/api/v1/cart", multiTenantMiddleware, cartRoutes);
-app.use("/api/v1/customer", customerRoutes);
+app.use("/api/v1/customer", multiTenantMiddleware, customerRoutes);
 
 export default app;

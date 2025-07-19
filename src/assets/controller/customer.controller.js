@@ -393,6 +393,13 @@ const getCustomerProfile = async (req, res) => {
       [customer_id[0].id]
     );
 
+    const customerData = Object.fromEntries(
+      Object.entries(customer[0]).map(([key, value]) => [
+        key,
+        value === null ? [] : value,
+      ])
+    );
+
     return res.status(200).json(
       Object.assign(
         {},
@@ -400,7 +407,7 @@ const getCustomerProfile = async (req, res) => {
           success: true,
           message: "Customer profile fetched successfully.",
           data: {
-            ...customer[0],
+            ...customerData,
             addresses,
           },
         }
@@ -413,7 +420,7 @@ const getCustomerProfile = async (req, res) => {
       error: "Internal server error",
     });
   } finally {
-    connection.release();
+    client.release();
   }
 };
 
