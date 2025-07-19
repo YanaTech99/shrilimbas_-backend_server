@@ -1,6 +1,8 @@
-import pool from "../db/index.js";
+import pools from "../db/index.js";
 
 const addToCart = async (req, res) => {
+  const pool = pools[req.tenantId];
+
   const { id: user_id } = req.user;
   const [customer_id] = await pool.query(
     `SELECT id FROM customers WHERE id = ?`,
@@ -95,15 +97,33 @@ const addToCart = async (req, res) => {
 
     if (existing.length > 0) {
       const existingItem = existing[0];
-      const newQuantity = parseInt(existingItem.quantity) + parseInt(quantity);
 
-      await connection.execute(
+      if (quantity === 0) {
+        const [deleted] = await connection.execute(
+          `DELETE FROM cart_items WHERE id = ?`,
+          [existingItem.id]
+        );
+
+        if (deleted.affectedRows > 0) {
+          return res.status(200).json({
+            success: true,
+            message: "Cart item deleted successfully",
+          });
+        } else {
+          return res.status(500).json({
+            success: false,
+            error: "Failed to delete cart item",
+          });
+        }
+      }
+
+      const [updated] = await connection.execute(
         `UPDATE cart_items
          SET quantity = ?, price_per_unit = ?, discount_per_unit = ?, tax_per_unit = ?, 
              sku = ?, product_snapshot = ?, updated_at = CURRENT_TIMESTAMP
          WHERE id = ?`,
         [
-          newQuantity,
+          parseInt(quantity),
           price_per_unit,
           discount_per_unit,
           tax_per_unit,
@@ -112,6 +132,13 @@ const addToCart = async (req, res) => {
           existingItem.id,
         ]
       );
+
+      if (updated.affectedRows === 0) {
+        return res.status(500).json({
+          success: false,
+          error: "Failed to update cart item",
+        });
+      }
 
       return res.status(200).json({
         success: true,
@@ -167,6 +194,7 @@ const addToCart = async (req, res) => {
 };
 
 const deleteFromCart = async (req, res) => {
+  const pool = pools[req.tenantId];
   const { id: user_id } = req.user;
   const [customer_id] = await pool.query(
     `SELECT id FROM customers WHERE id = ?`,
@@ -225,6 +253,7 @@ const deleteFromCart = async (req, res) => {
 };
 
 const getCart = async (req, res) => {
+  const pool = pools[req.tenantId];
   const { id: user_id } = req.user;
   const [customer_id] = await pool.query(
     `SELECT id FROM customers WHERE id = ?`,

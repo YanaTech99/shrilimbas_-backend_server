@@ -41,12 +41,12 @@ import customerRoutes from "./assets/router/customer.route.js";
 
 // define routes
 app.use("/api/v1/auth", multiTenantMiddleware, authRoutes);
-app.use("/api/v1/app", appRoutes);
+app.use("/api/v1/app", multiTenantMiddleware, appRoutes);
 app.use("/api/v1/shop", shopRoutes);
 app.use("/api/v1/slider", sliderRoutes);
-app.use("/api/v1/products", productRoutes);
+app.use("/api/v1/products", multiTenantMiddleware, productRoutes);
 app.use("/api/v1/orders", orderRoutes);
-app.use("/api/v1/cart", cartRoutes);
+app.use("/api/v1/cart", multiTenantMiddleware, cartRoutes);
 app.use("/api/v1/customer", customerRoutes);
 
 export default app;

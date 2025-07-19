@@ -1,4 +1,4 @@
-import pool from "../db/index.js";
+import pools from "../db/index.js";
 import fs from "fs";
 import {
   uploadImageToCloudinary,
@@ -7,6 +7,7 @@ import {
 import { sanitizeInput } from "../utils/validation.util.js";
 
 const addSlider = async (req, res) => {
+  const pool = pools[req.tenantId];
   const { id: userId, user_type } = req.user;
   if (user_type !== "VENDOR") {
     return res.status(403).json({
@@ -147,6 +148,7 @@ const addSlider = async (req, res) => {
 };
 
 const deleteSlider = async (req, res) => {
+  const pool = pools[req.tenantId];
   const { id: userId, user_type } = req.user;
   if (user_type !== "VENDOR") {
     return res.status(403).json({
@@ -211,6 +213,7 @@ const deleteSlider = async (req, res) => {
 };
 
 const getSlider = async (req, res) => {
+  const pool = pools[req.tenantId];
   const { id: user_id, user_type } = req.user;
   if (user_type !== "VENDOR") {
     return res.status(403).json({
@@ -277,6 +280,7 @@ const getSlider = async (req, res) => {
 };
 
 const updateSlider = async (req, res) => {
+  const pool = pools[req.tenantId];
   const { id: user_id, user_type } = req.user;
   if (user_type !== "VENDOR") {
     return res.status(403).json({

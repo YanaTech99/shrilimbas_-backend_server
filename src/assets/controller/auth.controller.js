@@ -1,4 +1,4 @@
-import pool from "../db/index.js";
+import pools from "../db/index.js";
 import { generateAccessToken } from "../utils/jwt.util.js";
 import { sanitizeInput, validateUserInput } from "../utils/validation.util.js";
 import { generateOTP } from "../utils/generateOTP.util.js";
@@ -6,7 +6,7 @@ import bcrypt from "bcrypt";
 import { UAParser } from "ua-parser-js";
 
 const sendOTP = async (req, res) => {
-  const tenantId = req.tenantId; // tenant ID for DB connection
+  const pool = pools[req.tenantId];
   if (!req.body.phone_number) {
     return res.status(400).json({
       success: false,
@@ -71,7 +71,7 @@ const sendOTP = async (req, res) => {
 
   const message = `${deviceInfoMsg}. Your OTP is ${otp}.`;
 
-  const client = await pool[tenantId].getConnection();
+  const client = await pool.getConnection();
 
   try {
     const [checkOTPRecords] = await client.execute(
@@ -173,7 +173,7 @@ const sendOTP = async (req, res) => {
 };
 
 const loginViaPhone = async (req, res) => {
-  const tenantId = req.tenantId; // tenant ID for DB connection
+  const pool = pools[req.tenantId];
   const modifiedInput = sanitizeInput(req.body);
   const { errors } = validateUserInput({ phone: modifiedInput.phone_number });
   if (Object.entries(errors).length > 0) {
@@ -206,7 +206,7 @@ const loginViaPhone = async (req, res) => {
       error: "Invalid user type",
     });
   }
-  const client = await pool[tenantId].getConnection();
+  const client = await pool.getConnection();
 
   try {
     await client.beginTransaction();

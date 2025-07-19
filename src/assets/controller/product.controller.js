@@ -1,6 +1,8 @@
-import pool from "../db/index.js";
+import pools from "../db/index.js";
 
 const getPaginatedCategories = async (req, res) => {
+  const pool = pools[req.tenantId];
+
   try {
     const {
       page = 1,
@@ -73,6 +75,8 @@ const getPaginatedCategories = async (req, res) => {
 };
 
 const getPaginatedBrands = async (req, res) => {
+  const pool = pools[req.tenantId];
+
   try {
     const {
       page = 1,
@@ -144,6 +148,8 @@ const getPaginatedBrands = async (req, res) => {
 };
 
 const getPaginatedProducts = async (req, res) => {
+  const pool = pools[req.tenantId];
+
   const { page = 1, limit = 10, search, category_id } = req.query;
 
   const offset = (parseInt(page) - 1) * parseInt(limit);

@@ -1,6 +1,7 @@
-import pool from "../db/index.js";
+import pools from "../db/index.js";
 
 const placeOrder = async (req, res) => {
+  const pool = pools[req.tenantId];
   const { id: user_id, user_type } = req.user;
   const [customer_id] = await pool.query(
     `SELECT id FROM customers WHERE id = ?`,
@@ -194,6 +195,7 @@ const placeOrder = async (req, res) => {
 };
 
 const getOrderByCustomerID = async (req, res) => {
+  const pool = pools[req.tenantId];
   const { id: user_id } = req.user;
   const [customer_id] = await pool.execute(
     `SELECT id FROM customers WHERE id = ?`,

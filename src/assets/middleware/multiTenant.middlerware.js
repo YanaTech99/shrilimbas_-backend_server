@@ -1,4 +1,5 @@
 import pools from "../db/index.js";
+import jwt from "jsonwebtoken";
 
 const multiTenantMiddleware = (req, res, next) => {
   const token = req.headers.authorization?.split(" ")[1];
@@ -7,6 +8,7 @@ const multiTenantMiddleware = (req, res, next) => {
   if (token) {
     try {
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      req.userId = decoded.id;
       tenantId = decoded.tenant_id;
     } catch (err) {
       return res.status(403).json({ error: "Invalid token" });

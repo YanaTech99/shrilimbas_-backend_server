@@ -68,9 +68,24 @@ const modifyProductResponse = async (data, tenantId) => {
 };
 
 const getAppData = async (req, res) => {
+  const userId = req.userId;
   const tenantID = req.tenantId;
   const pool = pools[tenantID];
   const client = await pool.getConnection();
+
+  if (userId) {
+    const [customer_id] = await client.query(
+      `SELECT id FROM customers WHERE id = ?`,
+      [userId]
+    );
+
+    if (!customer_id || customer_id.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: "Customer not found",
+      });
+    }
+  }
 
   try {
     const sliderPositions = [
@@ -118,6 +133,12 @@ const getAppData = async (req, res) => {
         WHERE status = 'active'
         ORDER BY sort_order LIMIT 30
       `),
+
+      client.execute(
+        `
+        SELECT * FROM cart_items WHERE customer_id = ?`,
+        [userId ? userId : 0]
+      ),
     ];
 
     const [topSlider, midSlider, bottomSlider] = await Promise.all(
@@ -131,11 +152,11 @@ const getAppData = async (req, res) => {
       [featuredProducts],
       [brands],
       [allProducts],
+      [cartItems],
     ] = await Promise.all(queryPromises);
 
     const safe = (data) => {
       if (data === null) {
-        console.log(data);
         return [];
       }
 
@@ -165,10 +186,11 @@ const getAppData = async (req, res) => {
         ),
         brands: safe(brands),
         allProducts: await modifyProductResponse(allProducts, tenantID),
+        cartItems: safe(cartItems) || [],
       },
     });
   } catch (error) {
-    console.error("Error in getAppData:", error.message);
+    console.error("Error in getAppData:", error);
     res.status(500).json({ success: false, error: "Internal Server Error" });
   } finally {
     client.release();

@@ -1,4 +1,4 @@
-import pool from "../db/index.js";
+import pools from "../db/index.js";
 import { sanitizeInput, validateUserInput } from "../utils/validation.util.js";
 import {
   uploadImageToCloudinary,
@@ -7,6 +7,7 @@ import {
 import fs from "fs";
 
 const updateProfile = async (req, res) => {
+  const pool = pools[req.tenantId];
   const { id: user_id } = req.user;
   const [customer_id] = await pool.query(
     `SELECT id FROM customers WHERE id = ?`,
@@ -147,6 +148,7 @@ const updateProfile = async (req, res) => {
 };
 
 const addNewAddress = async (req, res) => {
+  const pool = pools[req.tenantId];
   const { id: user_id } = req.user;
   const [customer_id] = await pool.query(
     `SELECT id FROM customers WHERE id = ?`,
@@ -228,6 +230,7 @@ const addNewAddress = async (req, res) => {
 };
 
 const deleteAddress = async (req, res) => {
+  const pool = pools[req.tenantId];
   const { id: user_id } = req.user;
   const [customer_id] = await pool.query(
     `SELECT id FROM customers WHERE id = ?`,
@@ -279,6 +282,7 @@ const deleteAddress = async (req, res) => {
 };
 
 const updateAddress = async (req, res) => {
+  const pool = pools[req.tenantId];
   const { id: user_id } = req.user;
   const [customer_id] = await pool.query(
     `SELECT id FROM customers WHERE id = ?`,
@@ -354,6 +358,7 @@ const updateAddress = async (req, res) => {
 };
 
 const getCustomerProfile = async (req, res) => {
+  const pool = pools[req.tenantId];
   const { id: user_id } = req.user;
   const [customer_id] = await pool.query(
     `SELECT id FROM customers WHERE id = ?`,
@@ -413,6 +418,7 @@ const getCustomerProfile = async (req, res) => {
 };
 
 const getAddresses = async (req, res) => {
+  const pool = pools[req.tenantId];
   const { id: user_id } = req.user;
   const [customer_id] = await pool.query(
     `SELECT id FROM customers WHERE id = ?`,
