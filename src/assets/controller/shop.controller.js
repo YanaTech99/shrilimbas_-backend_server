@@ -1,4 +1,4 @@
-import pool from "../db/index.js";
+import pools from "../db/index.js";
 import fs from "fs";
 import {
   uploadImageToCloudinary,
@@ -8,6 +8,7 @@ import {
 import { sanitizeInput } from "../utils/validation.util.js";
 
 const updateShop = async (req, res) => {
+  const pool = pools[req.tenantId];
   const { id: userId } = req.user;
   const [shop] = await pool.execute(
     "SELECT id FROM shops WHERE user_id = ? AND status = 'ACTIVE' LIMIT 1",
@@ -91,6 +92,7 @@ const updateShop = async (req, res) => {
 };
 
 const updateAddress = async (req, res) => {
+  const pool = pools[req.tenantId];
   const { id: user_id } = req.user;
   const [shop_id] = await pool.query(`SELECT id FROM shops WHERE user_id = ?`, [
     user_id,
@@ -165,6 +167,7 @@ const updateAddress = async (req, res) => {
 };
 
 const addBrand = async (req, res) => {
+  const pool = pools[req.tenantId];
   const { id: user_id, user_type } = req.user;
 
   if (user_type !== "VENDOR") {
@@ -265,6 +268,7 @@ const addBrand = async (req, res) => {
 };
 
 const getPaginatedBrands = async (req, res) => {
+  const pool = pools[req.tenantId];
   const { id: user_id } = req.user;
 
   const shop_id = await pool.execute(
@@ -348,6 +352,7 @@ const getPaginatedBrands = async (req, res) => {
 };
 
 const addCategory = async (req, res) => {
+  const pool = pools[req.tenantId];
   const { id: user_id, user_type } = req.user;
 
   if (user_type !== "VENDOR") {
@@ -431,6 +436,7 @@ const addCategory = async (req, res) => {
 };
 
 const getPaginatedCategories = async (req, res) => {
+  const pool = pools[req.tenantId];
   const { id: user_id } = req.user;
   const [shop_id] = await pool.execute(
     "SELECT id FROM shops WHERE user_id = ? AND status = 'ACTIVE' LIMIT 1",
@@ -525,6 +531,7 @@ const getPaginatedCategories = async (req, res) => {
 };
 
 const addProducts = async (req, res) => {
+  const pool = pools[req.tenantId];
   const { id: user_id, user_type } = req.user;
 
   if (user_type !== "VENDOR") {
@@ -553,6 +560,8 @@ const addProducts = async (req, res) => {
       : req.body;
   const variants = product.variants || [];
   const productFiles = req.files || {};
+
+  console.log(product);
 
   const requiredFields = ["product_name", "sku", "mrp", "selling_price"];
   for (const field of requiredFields) {
@@ -777,7 +786,7 @@ const addProducts = async (req, res) => {
       }
     }
 
-    console.error("Error adding product:", error.message);
+    console.error("Error adding product:", error);
     return res.status(500).json({
       success: false,
       message: "Failed to add product.",
@@ -796,6 +805,7 @@ const addProducts = async (req, res) => {
 };
 
 const updateProduct = async (req, res) => {
+  const pool = pools[req.tenantId];
   const { id: user_id, user_type } = req.user;
   const [shop_id] = await pool.execute(
     "SELECT id FROM shops WHERE user_id = ?",
@@ -954,6 +964,7 @@ const updateProduct = async (req, res) => {
 };
 
 const getPaginatedproducts = async (req, res) => {
+  const pool = pools[req.tenantId];
   const { id: user_id, user_type } = req.user;
 
   if (user_type !== "VENDOR") {
