@@ -6,6 +6,7 @@ import bcrypt from "bcrypt";
 import { UAParser } from "ua-parser-js";
 
 const sendOTP = async (req, res) => {
+  const tenantId = req.tenantId;
   const pool = pools[req.tenantId];
   if (!req.body.phone_number) {
     return res.status(400).json({
@@ -173,6 +174,7 @@ const sendOTP = async (req, res) => {
 };
 
 const loginViaPhone = async (req, res) => {
+  const tenantId = req.tenantId;
   const pool = pools[req.tenantId];
   const modifiedInput = sanitizeInput(req.body);
   const { errors } = validateUserInput({ phone: modifiedInput.phone_number });
@@ -242,7 +244,7 @@ const loginViaPhone = async (req, res) => {
       const [profileInsertResult] = await client.execute(
         `INSERT INTO ${profileTable} (${
           user_type === "CUSTOMER" ? "id" : "user_id"
-        }, name, email) VALUES (?, 'Guest', 'example@example.com')`,
+        }) VALUES (?)`,
         [newUserRows[0].id]
       );
 
