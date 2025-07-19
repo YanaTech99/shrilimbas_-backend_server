@@ -72,7 +72,6 @@ const getAppData = async (req, res) => {
   const tenantID = req.tenantId;
   const pool = pools[tenantID];
   const client = await pool.getConnection();
-
   if (userId) {
     const [customer_id] = await client.query(
       `SELECT id FROM customers WHERE id = ?`,
@@ -137,7 +136,7 @@ const getAppData = async (req, res) => {
       client.execute(
         `
         SELECT * FROM cart_items WHERE customer_id = ?`,
-        [userId ? userId : 0]
+        [userId ? userId : ""]
       ),
     ];
 
