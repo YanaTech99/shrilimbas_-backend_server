@@ -388,15 +388,24 @@ const getCustomerProfile = async (req, res) => {
       });
     }
 
-    const [addresses] = await client.query(
+    let [addresses] = await client.query(
       `SELECT * FROM addresses WHERE customer_id = ?`,
       [customer_id[0].id]
     );
 
+    addresses = addresses.map((address) => {
+      return Object.fromEntries(
+        Object.entries(address).map(([key, value]) => [
+          key,
+          value === null ? "" : value,
+        ])
+      );
+    });
+
     const customerData = Object.fromEntries(
       Object.entries(customer[0]).map(([key, value]) => [
         key,
-        value === null ? [] : value,
+        value === null ? "" : value,
       ])
     );
 
