@@ -6,6 +6,7 @@ import {
 } from "../utils/cloudinary.util.js";
 
 import { sanitizeInput } from "../utils/validation.util.js";
+import { defaultImageUrl } from "../../constants.js";
 
 const updateShop = async (req, res) => {
   const pool = pools[req.tenantId];
@@ -351,185 +352,6 @@ const getPaginatedBrands = async (req, res) => {
   }
 };
 
-const addCategory = async (req, res) => {
-  const pool = pools[req.tenantId];
-  const { id: user_id, user_type } = req.user;
-
-  if (user_type !== "VENDOR") {
-    return res.status(403).json({
-      success: false,
-      message: "Forbidden: Only vendor can add categories.",
-    });
-  }
-
-  const category = req.body;
-
-  const [shop_id] = await pool.execute(
-    "SELECT id FROM shops WHERE user_id = ? AND status = 'ACTIVE' LIMIT 1",
-    [user_id]
-  );
-
-  const image = req.file ? req.file : null;
-
-  try {
-    const {
-      title,
-      description,
-      slug,
-      status = "active",
-      sort_order = 0,
-      meta_title,
-      meta_description,
-      parent_id,
-    } = category;
-
-    let validParentId = parent_id === "null" ? null : parent_id;
-    const [result] = await pool.execute(
-      `INSERT INTO categories 
-       (title, slug, description, status, sort_order, meta_title, meta_description, parent_id, shop_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        title,
-        slug,
-        description || null,
-        status,
-        sort_order,
-        meta_title || null,
-        meta_description || null,
-        validParentId || null,
-        shop_id[0].id,
-      ]
-    );
-
-    if (image && image !== null) {
-      const uploadResult = await uploadImageToCloudinary(image.path);
-      if (uploadResult) {
-        await pool.execute("UPDATE categories SET image_url = ? WHERE id = ?", [
-          uploadResult.secure_url,
-          result.insertId,
-        ]);
-      }
-    }
-
-    const [newCategory] = await pool.execute(
-      "SELECT * FROM categories WHERE id = ?",
-      [result.insertId]
-    );
-
-    return res.status(201).json({
-      success: true,
-      message: "Category added successfully.",
-      data: newCategory[0],
-    });
-  } catch (error) {
-    console.error("Error adding category:", error.message);
-    return res.status(500).json({
-      success: false,
-      message: "Failed to add category.",
-      error: error.message,
-    });
-  } finally {
-    if (image && image !== null) {
-      fs.unlinkSync(image.path);
-    }
-  }
-};
-
-const getPaginatedCategories = async (req, res) => {
-  const pool = pools[req.tenantId];
-  const { id: user_id } = req.user;
-  const [shop_id] = await pool.execute(
-    "SELECT id FROM shops WHERE user_id = ? AND status = 'ACTIVE' LIMIT 1",
-    [user_id]
-  );
-
-  try {
-    const {
-      page = 1,
-      limit,
-      status,
-      title,
-      parent_id,
-      search,
-      sort_by = "sort_order",
-      order = "ASC",
-    } = req.query;
-
-    const offset = (parseInt(page) - 1) * parseInt(limit);
-    const whereClauses = [];
-    const values = [];
-
-    // Filters
-    if (status) {
-      whereClauses.push("status = ?");
-      values.push(status);
-    }
-
-    if (title) {
-      whereClauses.push("title LIKE ?");
-      values.push(`%${title}%`);
-    }
-
-    if (parent_id) {
-      whereClauses.push("parent_id = ?");
-      values.push(parent_id);
-    }
-
-    if (search) {
-      whereClauses.push(`(
-        title LIKE ? OR
-        slug LIKE ? OR
-        description LIKE ?
-      )`);
-      values.push(`%${search}%`, `%${search}%`, `%${search}%`);
-    }
-
-    if (shop_id.length > 0) {
-      whereClauses.push("shop_id = ?");
-      values.push(shop_id[0].id);
-    }
-
-    const whereSQL = whereClauses.length
-      ? `WHERE ${whereClauses.join(" AND ")}`
-      : "";
-
-    // Total count for pagination
-    const [countResult] = await pool.execute(
-      `SELECT COUNT(*) AS total FROM categories ${whereSQL}`,
-      values
-    );
-    const total = countResult[0].total;
-    const totalPages = Math.ceil(total / parseInt(limit));
-
-    // Fetch paginated categories
-    const [categories] = await pool.execute(
-      `SELECT * FROM categories ${whereSQL} ORDER BY ${sort_by} ${order} ${
-        limit ? `LIMIT ${limit} OFFSET ${parseInt(offset)}` : ""
-      }`,
-      [...values]
-    );
-
-    return res.status(200).json({
-      success: true,
-      message: "Categories fetched successfully.",
-      pagination: {
-        total,
-        page: parseInt(page),
-        per_page: parseInt(limit),
-        total_pages: totalPages,
-      },
-      data: categories,
-    });
-  } catch (error) {
-    console.error("Error fetching categories:", error.message);
-    return res.status(500).json({
-      success: false,
-      message: "Failed to fetch categories.",
-      error: error.message,
-    });
-  }
-};
-
 const addProducts = async (req, res) => {
   const pool = pools[req.tenantId];
   const { id: user_id, user_type } = req.user;
@@ -554,10 +376,12 @@ const addProducts = async (req, res) => {
   }
 
   const shop_id = shops[0].id;
-  const product =
+  const fomattedData =
     typeof req.body.product === "string"
       ? JSON.parse(req.body.product)
       : req.body;
+
+  const product = sanitizeInput(fomattedData);
   const variants = product.variants || [];
   const productFiles = req.files || {};
 
@@ -963,6 +787,83 @@ const updateProduct = async (req, res) => {
   }
 };
 
+const deleteProduct = async (req, res) => {
+  const pool = pools[req.tenantId];
+  const { id: user_id, user_type } = req.user;
+
+  if (user_type !== "VENDOR") {
+    return res.status(403).json({
+      success: false,
+      message: "Forbidden: Only vendors can delete their products.",
+    });
+  }
+
+  const { id: product_id } = req.body;
+
+  const [shopRows] = await pool.execute(
+    "SELECT id FROM shops WHERE user_id = ? AND status = 'ACTIVE' LIMIT 1",
+    [user_id]
+  );
+
+  if (shopRows.length === 0) {
+    return res
+      .status(404)
+      .json({ success: false, message: "Shop not found for this vendor." });
+  }
+
+  const [product] = await pool.execute(
+    "SELECT id FROM products WHERE id = ? AND shop_id = ?",
+    [product_id, shopRows[0].id]
+  );
+
+  if (product.length === 0) {
+    return res
+      .status(404)
+      .json({ success: false, message: "Product not found for this vendor." });
+  }
+
+  const productImage = product[0].thumbnail;
+
+  const client = await pool.getConnection();
+
+  try {
+    client.beginTransaction();
+
+    const [result] = await client.execute(
+      "DELETE FROM products WHERE id = ? AND shop_id = ?",
+      [product_id, shopRows[0].id]
+    );
+
+    if (result.affectedRows === 0) {
+      await client.rollback();
+      return res.status(404).json({
+        success: false,
+        message: "Failed to delete product.",
+      });
+    }
+
+    if (productImage) {
+      const public_id = productImage.split("/").pop().split(".")[0];
+      await deleteFromCloudinary(public_id);
+    }
+
+    await client.commit();
+    return res.status(200).json({
+      success: true,
+      message: "Product deleted successfully.",
+    });
+  } catch (error) {
+    await client.rollback();
+    console.error(error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to delete product.",
+    });
+  } finally {
+    client.release();
+  }
+};
+
 const getPaginatedproducts = async (req, res) => {
   const pool = pools[req.tenantId];
   const { id: user_id, user_type } = req.user;
@@ -981,6 +882,7 @@ const getPaginatedproducts = async (req, res) => {
     brand_id,
     category_id,
     search,
+    order,
   } = req.query;
 
   const offset = (parseInt(page) - 1) * parseInt(limit);
@@ -1034,7 +936,7 @@ const getPaginatedproducts = async (req, res) => {
 
     // Step 3: Fetch paginated products
     const [productRows] = await pool.execute(
-      `SELECT * FROM products p ${whereSQL} ORDER BY p.created_at DESC LIMIT ${parseInt(
+      `SELECT * FROM products p ${whereSQL} ORDER BY p.created_at ${order} LIMIT ${parseInt(
         limit
       )} OFFSET ${offset}`,
       [...values]
@@ -1130,6 +1032,368 @@ const getPaginatedproducts = async (req, res) => {
   }
 };
 
+const addCategory = async (req, res) => {
+  const pool = pools[req.tenantId];
+  const { id: user_id, user_type } = req.user;
+
+  if (user_type !== "VENDOR") {
+    return res.status(403).json({
+      success: false,
+      message: "Forbidden: Only vendor can add categories.",
+    });
+  }
+
+  const [shop_id] = await pool.execute(
+    "SELECT id FROM shops WHERE user_id = ? AND status = 'ACTIVE' LIMIT 1",
+    [user_id]
+  );
+
+  if (!shop_id || shop_id.length === 0) {
+    return res.status(404).json({
+      success: false,
+      message: "Shop not found.",
+    });
+  }
+
+  const modifiedInput = sanitizeInput(req.body);
+  const category = modifiedInput;
+
+  const [categoryExists] = await pool.execute(
+    "SELECT * FROM categories WHERE title = ? AND shop_id = ?",
+    [category.title, shop_id[0].id]
+  );
+
+  if (categoryExists.length > 0) {
+    return res.status(400).json({
+      success: false,
+      message: "Category already exists.",
+    });
+  }
+
+  const [countResult] = await pool.execute(
+    "SELECT COUNT(*) AS total FROM categories WHERE shop_id = ?",
+    [shop_id[0].id]
+  );
+
+  const image = req.file ? req.file : null;
+
+  try {
+    const {
+      title,
+      description,
+      slug,
+      status = "active",
+      sort_order = countResult[0].total + 1,
+      meta_title,
+      meta_description,
+      parent_id,
+    } = category;
+
+    let validParentId = parent_id === "null" ? null : parent_id;
+    const [result] = await pool.execute(
+      `INSERT INTO categories 
+       (title, image_url, slug, description, status, sort_order, meta_title, meta_description, parent_id, shop_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        title,
+        defaultImageUrl,
+        slug,
+        description || null,
+        status,
+        sort_order,
+        meta_title || null,
+        meta_description || null,
+        validParentId || null,
+        shop_id[0].id,
+      ]
+    );
+
+    if (image && image !== null) {
+      const uploadResult = await uploadImageToCloudinary(image.path);
+      if (uploadResult) {
+        await pool.execute("UPDATE categories SET image_url = ? WHERE id = ?", [
+          uploadResult.secure_url,
+          result.insertId,
+        ]);
+      } else {
+        return res.status(500).json({
+          success: false,
+          message: "Failed to upload image",
+        });
+      }
+    }
+
+    const [newCategory] = await pool.execute(
+      "SELECT * FROM categories WHERE id = ?",
+      [result.insertId]
+    );
+
+    return res.status(201).json({
+      success: true,
+      message: "Category added successfully.",
+      data: newCategory[0],
+    });
+  } catch (error) {
+    console.error("Error adding category:", error.message);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to add category.",
+      error: error.message,
+    });
+  } finally {
+    if (image && image !== null) {
+      fs.unlinkSync(image.path);
+    }
+  }
+};
+
+const getPaginatedCategories = async (req, res) => {
+  const pool = pools[req.tenantId];
+  const { id: user_id } = req.user;
+  const [shop_id] = await pool.execute(
+    "SELECT id FROM shops WHERE user_id = ? AND status = 'ACTIVE' LIMIT 1",
+    [user_id]
+  );
+
+  try {
+    const {
+      page = 1,
+      limit,
+      status,
+      title,
+      parent_id,
+      search,
+      sort_by = "sort_order",
+      order = "DESC",
+    } = req.query;
+
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+    const whereClauses = [];
+    const values = [];
+
+    // Filters
+    if (status) {
+      whereClauses.push("status = ?");
+      values.push(status.toLowerCase());
+    }
+
+    if (title) {
+      whereClauses.push("title LIKE ?");
+      values.push(`%${title}%`);
+    }
+
+    if (parent_id) {
+      whereClauses.push("parent_id = ?");
+      values.push(parent_id);
+    }
+
+    if (search) {
+      whereClauses.push(`(
+        title LIKE ? OR
+        slug LIKE ? OR
+        description LIKE ?
+      )`);
+      values.push(`%${search}%`, `%${search}%`, `%${search}%`);
+    }
+
+    if (shop_id.length > 0) {
+      whereClauses.push("shop_id = ?");
+      values.push(shop_id[0].id);
+    }
+
+    const whereSQL = whereClauses.length
+      ? `WHERE ${whereClauses.join(" AND ")}`
+      : "";
+
+    // Total count for pagination
+    const [countResult] = await pool.execute(
+      `SELECT COUNT(*) AS total FROM categories ${whereSQL}`,
+      values
+    );
+    const total = countResult[0].total;
+    const totalPages = Math.ceil(total / parseInt(limit));
+
+    // Fetch paginated categories
+    const [categories] = await pool.execute(
+      `SELECT * FROM categories ${whereSQL} ORDER BY ${sort_by} ${order} ${
+        limit ? `LIMIT ${limit} OFFSET ${parseInt(offset)}` : ""
+      }`,
+      [...values]
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "Categories fetched successfully.",
+      pagination: {
+        total,
+        page: parseInt(page),
+        per_page: parseInt(limit),
+        total_pages: totalPages,
+      },
+      data: categories,
+    });
+  } catch (error) {
+    console.error("Error fetching categories:", error.message);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch categories.",
+      error: error.message,
+    });
+  }
+};
+
+const deleteCategory = async (req, res) => {
+  const pool = pools[req.tenantId];
+  const { id: user_id, user_type } = req.user;
+
+  if (user_type !== "VENDOR") {
+    return res.status(403).json({
+      success: false,
+      message: "Forbidden: Only vendors can delete products.",
+    });
+  }
+
+  const [shops] = await pool.execute(
+    "SELECT id FROM shops WHERE user_id = ? AND status = 'ACTIVE' LIMIT 1",
+    [user_id]
+  );
+
+  if (shops.length === 0) {
+    return res.status(404).json({
+      success: false,
+      message: "Active shop not found for this vendor.",
+    });
+  }
+
+  const shop_id = shops[0].id;
+
+  const modifiedInput = sanitizeInput(req.body);
+  const { id } = modifiedInput;
+
+  const [category] = await pool.query(`Select * from categories where id = ?`, [
+    id,
+  ]);
+
+  if (!category || category.length === 0) {
+    return res.status(404).json({
+      success: false,
+      message: "Category not found.",
+    });
+  }
+
+  const image = category[0].image_url;
+
+  try {
+    const [result] = await pool.query(`Delete from categories where id = ?`, [
+      id,
+    ]);
+
+    if (result.affectedRows === 0) {
+      return res.status(500).json({
+        success: false,
+        message: "Failed to delete category.",
+      });
+    }
+
+    if (image !== defaultImageUrl) {
+      const public_id = image.split("/").pop().split(".")[0];
+      await deleteFromCloudinary(public_id);
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Category deleted successfully.",
+    });
+  } catch (error) {
+    console.error("Error deleting category:", error.message);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to delete category.",
+      error: error.message,
+    });
+  }
+};
+
+const updateCategory = async (req, res) => {
+  const pool = pools[req.tenantId];
+  const { id: user_id, user_type } = req.user;
+
+  if (user_type !== "VENDOR") {
+    return res.status(403).json({
+      success: false,
+      message: "Forbidden: Only vendors can add products.",
+    });
+  }
+
+  const [shops] = await pool.execute(
+    "SELECT id FROM shops WHERE user_id = ? AND status = 'ACTIVE' LIMIT 1",
+    [user_id]
+  );
+
+  if (shops.length === 0) {
+    return res.status(404).json({
+      success: false,
+      message: "Active shop not found for this vendor.",
+    });
+  }
+
+  const shop_id = shops[0].id;
+
+  const modifiedInput = sanitizeInput(req.body);
+  const { id } = modifiedInput;
+
+  const [category] = await pool.query(`Select * from categories where id = ?`, [
+    id,
+  ]);
+
+  if (!category || category.length === 0) {
+    return res.status(404).json({
+      success: false,
+      message: "Category not found.",
+    });
+  }
+
+  try {
+    const updateQuery = [];
+
+    for (const [key, value] of Object.entries(modifiedInput)) {
+      updateQuery.push(`${key} = ?`);
+    }
+
+    if (updateQuery.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "No fields to update.",
+      });
+    }
+
+    const [result] = await pool.query(
+      `UPDATE categories SET ${updateQuery.join(", ")} WHERE id = ?`,
+      [...Object.values(modifiedInput), id]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(500).json({
+        success: false,
+        message: "Failed to update category.",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Category updated successfully.",
+      category_id: id,
+    });
+  } catch (error) {
+    console.error("Error updating category:", error.message);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to update category.",
+      error: error.message,
+    });
+  }
+};
+
 export {
   updateShop,
   updateAddress,
@@ -1137,7 +1401,10 @@ export {
   addBrand,
   addProducts,
   updateProduct,
+  deleteProduct,
+  getPaginatedproducts,
   getPaginatedCategories,
   getPaginatedBrands,
-  getPaginatedproducts,
+  deleteCategory,
+  updateCategory,
 };
