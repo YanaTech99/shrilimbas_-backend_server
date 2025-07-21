@@ -16,9 +16,9 @@ const addToCart = async (req, res) => {
     });
   }
 
-  const { product_id, product_variant_id = null, quantity } = req.body;
-
-  if (!product_id || !quantity || quantity < 1) {
+  const { product_id, product_variant_id = null, item_quantity } = req.body;
+  let quantity = parseInt(item_quantity);
+  if (!product_id || quantity === undefined) {
     return res.status(400).json({ error: "Invalid input fields" });
   }
 
