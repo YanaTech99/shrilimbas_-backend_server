@@ -11,10 +11,10 @@ const getCartData = async (customer_id, tenantID) => {
     );
 
     if (result.length === 0) {
-      return res.status(404).json({
+      return {
         success: false,
         error: "Cart not found",
-      });
+      };
     }
 
     // Map cart items to products
@@ -44,13 +44,16 @@ const getCartData = async (customer_id, tenantID) => {
       })
     );
 
-    return cartItems;
+    return {
+      success: true,
+      cartItems,
+    };
   } catch (err) {
     console.error(err);
-    return res.status(500).json({
+    return {
       success: false,
       error: "Internal server error",
-    });
+    };
   } finally {
     connection.release();
   }
@@ -206,6 +209,13 @@ const getAppData = async (req, res) => {
     let cartData = [];
     if (userId) {
       cartData = await getCartData(customer_id[0][0].id, tenantID);
+
+      if (!cartData.success) {
+        return res.status(400).json({
+          success: false,
+          error: cartData.error,
+        });
+      }
     }
 
     const safe = (data) => {
@@ -239,7 +249,7 @@ const getAppData = async (req, res) => {
         ),
         brands: safe(brands),
         allProducts: await modifyProductResponse(allProducts, tenantID),
-        cartData,
+        cartData: cartData.cartItems,
       },
     });
   } catch (error) {
