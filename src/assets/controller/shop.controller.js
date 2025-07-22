@@ -385,8 +385,6 @@ const addProducts = async (req, res) => {
   const variants = product.variants || [];
   const productFiles = req.files || {};
 
-  console.log(product);
-
   const requiredFields = ["product_name", "sku", "mrp", "selling_price"];
   for (const field of requiredFields) {
     if (!product[field]) {

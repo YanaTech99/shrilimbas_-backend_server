@@ -146,6 +146,14 @@ const addToCart = async (req, res) => {
       });
     } else {
       // 5. Insert new item
+
+      if (quantity === 0) {
+        return res.status(400).json({
+          success: false,
+          error: "Invalid quantity",
+        });
+      }
+
       const [result] = await connection.execute(
         `INSERT INTO cart_items 
          (customer_id, product_id, product_variant_id, shop_id, quantity, 
@@ -282,10 +290,39 @@ const getCart = async (req, res) => {
       });
     }
 
+    // Map cart items to products
+    const cartItems = await Promise.all(
+      result.map(async (item) => {
+        const [productRows] = await connection.execute(
+          `SELECT * FROM products WHERE id = ?`,
+          [item.product_id]
+        );
+
+        const product = productRows[0];
+
+        return {
+          id: product.id,
+          product_name: product.product_name,
+          thumbnail: product.thumbnail,
+          short_description: product.short_description,
+          stock_quantity: item.stock_quantity,
+          mrp: product.mrp,
+          price_per_unit: item.price_per_unit,
+          discount_per_unit: item.discount_per_unit,
+          tax_per_unit: item.tax_per_unit,
+          sku: item.sku,
+          product_snapshot: item.product_snapshot,
+          finalAmmount: product.selling_price,
+        };
+      })
+    );
+
+    console.log(cartItems);
+
     return res.status(200).json({
       success: true,
       message: "Cart retrieved successfully",
-      data: result,
+      data: cartItems,
     });
   } catch (err) {
     console.error(err);
