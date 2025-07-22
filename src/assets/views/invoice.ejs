@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    h1 { color: #333; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+    th { background-color: #f2f2f2; }
+  </style>
+</head>
+<body>
+  <h1>Invoice - <%= order.order_number %></h1>
+  <p><strong>Date:</strong> <%= order.date %></p>
+  <p><strong>Customer:</strong> <%= order.customer_name %></p>
+
+  <table>
+    <thead>
+      <tr><th>Product</th><th>Qty</th><th>Price</th><th>Total</th></tr>
+    </thead>
+    <tbody>
+      <% order.items.forEach(item => { %>
+        <tr>
+          <td><%= item.name %></td>
+          <td><%= item.quantity %></td>
+          <td>$<%= item.price %></td>
+          <td>$<%= (item.quantity * item.price).toFixed(2) %></td>
+        </tr>
+      <% }); %>
+    </tbody>
+  </table>
+
+  <h3>Total Amount: $<%= order.total.toFixed(2) %></h3>
+</body>
+</html>

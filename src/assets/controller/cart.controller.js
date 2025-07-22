@@ -317,8 +317,6 @@ const getCart = async (req, res) => {
       })
     );
 
-    console.log(cartItems);
-
     return res.status(200).json({
       success: true,
       message: "Cart retrieved successfully",

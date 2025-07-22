@@ -498,8 +498,8 @@ const addProducts = async (req, res) => {
     const productId = productResult.insertId;
 
     // Insert product categories
-    const categoryIds = product.category_ids || [];
-
+    const categoryIds = product.category_ids.map(Number) || [];
+    console.log("categoryIds", categoryIds);
     if (categoryIds.length > 0) {
       const categoryValues = [];
       const placeholders = [];
@@ -508,12 +508,22 @@ const addProducts = async (req, res) => {
         categoryValues.push(productId, categoryId, 0);
         placeholders.push("(?, ?, ?)");
       }
-
+      console.log("categoryValues", categoryValues);
       const categorySql = `
         INSERT INTO product_categories (product_id, category_id, sort_order)
         VALUES ${placeholders.join(", ")}
       `;
-      await connection.execute(categorySql, categoryValues);
+      const [categoryResult] = await connection.execute(
+        categorySql,
+        categoryValues
+      );
+
+      if (categoryResult.affectedRows === 0) {
+        return res.status(500).json({
+          success: false,
+          message: "Failed to insert product categories.",
+        });
+      }
     }
 
     // Insert variants
@@ -996,23 +1006,43 @@ const getPaginatedproducts = async (req, res) => {
     }
 
     // Step 7: Build final response
-    // const data = productRows.map((product) => ({
-    //   id: product.id,
-    //   product_name: product.product_name,
-    //   slug: product.slug,
-    //   sku: product.sku,
-    //   thumbnail: product.thumbnail,
-    //   selling_price: product.selling_price,
-    //   mrp: product.mrp,
-    //   brand: product.brand,
-    //   categories: categoryMap[product.id] || [],
-    //   variants: variantMap[product.id] || [],
-    // }));
+    const data = productRows.map((product) => ({
+      id: product.id,
+      product_name: product.product_name,
+      slug: product.slug,
+      sku: product.sku,
+      thumbnail: product.thumbnail,
+      galleryImages: product.gallery_images,
+      selling_price: product.selling_price,
+      mrp: product.mrp,
+      stock_quantity: product.stock_quantity,
+      min_stock_alert: product.min_stock_alert,
+      stock_unit: product.stock_unit,
+      is_in_stock: product.is_in_stock,
+      brand: product.brand,
+      status: product.status,
+      short_description: product.short_description,
+      long_description: product.long_description,
+      warehouse_location: product.warehouse_location,
+      tags: product.tags,
+      attributes: product.attributes,
+      is_featured: product.is_featured,
+      is_new_arrival: product.is_new_arrival,
+      is_best_seller: product.is_best_seller,
+      product_type: product.product_type,
+      meta_title: product.meta_title,
+      meta_description: product.meta_description,
+      custom_fields: product.custom_fields,
+      created_at: product.created_at,
+      updated_at: product.updated_at,
+      categories: categoryMap[product.id] || [],
+      variants: variantMap[product.id] || [],
+    }));
 
     return res.status(200).json({
       success: true,
       message: "Products fetched successfully.",
-      data: productRows,
+      data: data,
       pagination: {
         total,
         page: parseInt(page),
