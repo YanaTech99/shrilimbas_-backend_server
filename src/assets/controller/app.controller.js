@@ -32,7 +32,7 @@ const getCartData = async (customer_id, tenantID) => {
           product_name: product.product_name,
           thumbnail: product.thumbnail,
           short_description: product.short_description,
-          stock_quantity: item.quantity,
+          quantity: item.quantity,
           mrp: product.mrp,
           price_per_unit: item.price_per_unit,
           discount_per_unit: item.discount_per_unit,
