@@ -1,5 +1,61 @@
 import pools from "../db/index.js";
 
+const getCartData = async (customer_id, tenantID) => {
+  const pool = pools[tenantID];
+  const connection = await pool.getConnection();
+
+  try {
+    const [result] = await connection.execute(
+      `SELECT * FROM cart_items WHERE customer_id = ?`,
+      [customer_id]
+    );
+
+    if (result.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: "Cart not found",
+      });
+    }
+
+    // Map cart items to products
+    const cartItems = await Promise.all(
+      result.map(async (item) => {
+        const [productRows] = await connection.execute(
+          `SELECT * FROM products WHERE id = ?`,
+          [item.product_id]
+        );
+
+        const product = productRows[0];
+
+        return {
+          id: product.id,
+          product_name: product.product_name,
+          thumbnail: product.thumbnail,
+          short_description: product.short_description,
+          stock_quantity: item.stock_quantity,
+          mrp: product.mrp,
+          price_per_unit: item.price_per_unit,
+          discount_per_unit: item.discount_per_unit,
+          tax_per_unit: item.tax_per_unit,
+          sku: item.sku,
+          product_snapshot: item.product_snapshot,
+          finalAmmount: product.selling_price,
+        };
+      })
+    );
+
+    return cartItems;
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({
+      success: false,
+      error: "Internal server error",
+    });
+  } finally {
+    connection.release();
+  }
+};
+
 const getSlidersByPosition = async (position, tenantId) => {
   const pool = pools[tenantId];
   const client = await pool.getConnection();
@@ -72,11 +128,11 @@ const getAppData = async (req, res) => {
   const tenantID = req.tenantId;
   const pool = pools[tenantID];
   const client = await pool.getConnection();
+  let customer_id = null;
   if (userId) {
-    const [customer_id] = await client.query(
-      `SELECT id FROM customers WHERE id = ?`,
-      [userId]
-    );
+    customer_id = await client.query(`SELECT id FROM customers WHERE id = ?`, [
+      userId,
+    ]);
 
     if (!customer_id || customer_id.length === 0) {
       return res.status(404).json({
@@ -132,12 +188,6 @@ const getAppData = async (req, res) => {
         WHERE status = 'active'
         ORDER BY sort_order LIMIT 30
       `),
-
-      client.execute(
-        `
-        SELECT * FROM cart_items WHERE customer_id = ?`,
-        [userId ? userId : ""]
-      ),
     ];
 
     const [topSlider, midSlider, bottomSlider] = await Promise.all(
@@ -151,8 +201,12 @@ const getAppData = async (req, res) => {
       [featuredProducts],
       [brands],
       [allProducts],
-      [cartItems],
     ] = await Promise.all(queryPromises);
+
+    let cartData = [];
+    if (userId) {
+      cartData = await getCartData(customer_id[0][0].id, tenantID);
+    }
 
     const safe = (data) => {
       if (data === null) {
@@ -185,7 +239,7 @@ const getAppData = async (req, res) => {
         ),
         brands: safe(brands),
         allProducts: await modifyProductResponse(allProducts, tenantID),
-        cartItems: safe(cartItems) || [],
+        cartData,
       },
     });
   } catch (error) {
