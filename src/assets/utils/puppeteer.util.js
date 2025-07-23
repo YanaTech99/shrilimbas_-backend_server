@@ -1,4 +1,4 @@
-import path from "path";
+import path, { relative } from "path";
 import ejs from "ejs";
 import puppeteer from "puppeteer";
 import fs from "fs";
@@ -34,11 +34,18 @@ const generateInvoicePDF = async (orderData, outputFileName) => {
       "invoices",
       outputFileName
     );
-    await page.pdf({ path: outputPath, format: "A4", printBackground: true });
+    const pdfBuffer = await page.pdf({
+      path: outputPath,
+      format: "A4",
+      printBackground: true,
+    });
 
     await browser.close();
 
-    return `/invoices/${outputFileName}`; // relative public URL
+    return {
+      pdfBuffer,
+      relativePath: outputPath,
+    };
   } catch (err) {
     console.error("Error generating invoice PDF:", err);
     throw err;

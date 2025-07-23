@@ -1,5 +1,7 @@
 import pools from "../db/index.js";
 import { generateInvoicePDF } from "../utils/puppeteer.util.js";
+import { uploadInvoiceToCloudinary } from "../utils/cloudinary.util.js";
+import fs from "fs";
 
 const placeOrder = async (req, res) => {
   const pool = pools[req.tenantId];
@@ -58,17 +60,20 @@ const placeOrder = async (req, res) => {
         [item.product_id, item.product_variant_id || null]
       );
 
-      if (productRow.length === 0)
+      if (productRow.length === 0) {
+        await connection.rollback();
         return res.status(404).json({
           success: false,
           error: `Product ${item.product_id} not found`,
         });
+      }
 
       const product = productRow[0];
       shop_id = product.shop_id;
 
       const availableStock = product.stock ?? product.stock_quantity;
       if (availableStock < item.quantity) {
+        await connection.rollback();
         return res.status(400).json({
           success: false,
           error: `Not enough stock for product ${item.product_id}`,
@@ -168,50 +173,139 @@ const placeOrder = async (req, res) => {
       );
 
       // Update stock
-      // if (item.product_variant_id) {
-      //   await connection.execute(
-      //     `UPDATE product_variants SET stock = stock - ? WHERE id = ?`,
-      //     [item.quantity, item.product_variant_id]
-      //   );
-      // } else {
-      //   await connection.execute(
-      //     `UPDATE products SET stock_quantity = stock_quantity - ? WHERE id = ?`,
-      //     [item.quantity, item.product_id]
-      //   );
-      // }
+      if (item.product_variant_id) {
+        const [result] = await connection.execute(
+          `UPDATE product_variants SET stock = stock - ? WHERE id = ?`,
+          [item.quantity, item.product_variant_id]
+        );
+
+        if (result.affectedRows === 0) {
+          await connection.rollback();
+          return res.status(500).json({
+            success: false,
+            error: `Failed to update stock for product variant ${item.product_variant_id}`,
+          });
+        }
+      }
+
+      const [result] = await connection.execute(
+        `UPDATE products SET stock_quantity = stock_quantity - ? WHERE id = ?`,
+        [item.quantity, item.product_id]
+      );
+
+      if (result.affectedRows === 0) {
+        await connection.rollback();
+        return res.status(500).json({
+          success: false,
+          error: `Failed to update stock for product ${item.product_id}`,
+        });
+      }
     }
 
     await connection.commit();
 
-    // get customer details
-    const [customerDetails] = await pool.query(
-      `SELECT name FROM customers WHERE id = ?`,
+    // Get full customer details (optional additional fields)
+    const [userDetails] = await pool.query(
+      `SELECT full_name, email, phone FROM users WHERE id = ?`,
       [user_id]
     );
 
-    // Generate invoice
+    const [customerDetails] = await pool.query(
+      `SELECT alternate_phone FROM customers WHERE id = ?`,
+      [user_id]
+    );
+
+    const user = userDetails[0] || {};
+    const customer = customerDetails[0] || {};
+
+    // Prepare order data
     const orderData = {
+      order_id: orderId,
       order_number,
       date: new Date().toLocaleDateString(),
-      customer_name: customerDetails[0]?.name || "Customer",
-      items: orderItems.map((i) => ({
-        name: i.product_snapshot
-          ? JSON.parse(i.product_snapshot).name
-          : "Product",
-        quantity: i.quantity,
-        price: i.price_per_unit,
-      })),
-      total: totalAmount,
+      time: new Date().toLocaleTimeString(),
+      payment_method,
+      payment_status: "unpaid",
+      customer: {
+        name: user.full_name || "Customer",
+        email: user.email || "",
+        phone: user.phone || "",
+        alternate_phone: customer.alternate_phone || "",
+      },
+      delivery_address: {
+        address: delivery_address || "N/A",
+        city: delivery_city || "",
+        state: delivery_state || "",
+        country: delivery_country || "",
+        postal_code: delivery_postal_code || "",
+        instructions: delivery_instructions || "",
+      },
+      items: orderItems.map((item) => {
+        const snapshot = item.product_snapshot
+          ? JSON.parse(item.product_snapshot)
+          : {};
+
+        const price = item.price_per_unit;
+        const discount = item.discount_per_unit;
+        const tax = item.tax_per_unit;
+        const totalPerItem = (price - discount + tax) * item.quantity;
+
+        return {
+          name: snapshot.product_name || snapshot.name || "Product",
+          sku: item.sku || "",
+          quantity: item.quantity,
+          price_per_unit: price,
+          discount_per_unit: discount,
+          tax_per_unit: tax,
+          total: totalPerItem,
+        };
+      }),
+      price_summary: {
+        sub_total: subTotal,
+        discount: discountAmount,
+        tax: taxAmount,
+        shipping_fee: shippingFee,
+        total: totalAmount,
+      },
+      notes: notes || "",
     };
 
-    // Generate PDF
-    const fileName = `invoice-${order_number}.pdf`;
-    const relativePath = await generateInvoicePDF(orderData, fileName);
-    console.log(relativePath);
+    // Generate PDF invoice
+    const randomStr = crypto.randomBytes(4).toString("hex");
+    const fileName = `invoice-${order_number}-${randomStr}.pdf`;
+    const { relativePath, pdfBuffer } = await generateInvoicePDF(
+      orderData,
+      fileName
+    );
+
+    // Upload PDF to Cloudinary
+    let cloudinaryUrl = null;
+    try {
+      cloudinaryUrl = await uploadInvoiceToCloudinary(
+        pdfBuffer,
+        fileName,
+        relativePath,
+        req.tenantId
+      );
+
+      await connection.execute(
+        `UPDATE orders SET invoice_url = ? WHERE id = ?`,
+        [cloudinaryUrl, orderId]
+      );
+    } catch (uploadErr) {
+      console.error("Invoice upload failed:", uploadErr.message);
+    }
+
+    if (fs.existsSync(relativePath)) {
+      fs.unlink(relativePath, (err) => {
+        if (err) console.error("⚠️ Error deleting PDF:", err.message);
+      });
+    }
 
     return res.status(201).json({
       success: true,
       message: "Order placed successfully",
+      pdfUrl: cloudinaryUrl,
       data: orderData,
     });
   } catch (err) {

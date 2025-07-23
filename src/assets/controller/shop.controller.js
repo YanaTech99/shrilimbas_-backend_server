@@ -353,7 +353,8 @@ const getPaginatedBrands = async (req, res) => {
 };
 
 const addProducts = async (req, res) => {
-  const pool = pools[req.tenantId];
+  const tenantId = req.tenantId;
+  const pool = pools[tenantId];
   const { id: user_id, user_type } = req.user;
 
   if (user_type !== "VENDOR") {
@@ -384,7 +385,6 @@ const addProducts = async (req, res) => {
   const product = sanitizeInput(fomattedData);
   const variants = product.variants || [];
   const productFiles = req.files || {};
-
   const requiredFields = ["product_name", "sku", "mrp", "selling_price"];
   for (const field of requiredFields) {
     if (!product[field]) {
@@ -412,7 +412,10 @@ const addProducts = async (req, res) => {
 
     // Upload product thumbnail
     const thumbFile = productFiles.thumbnail[0];
-    const thumbnailUpload = await uploadImageToCloudinary(thumbFile.path);
+    const thumbnailUpload = await uploadImageToCloudinary(
+      thumbFile.path,
+      tenantId
+    );
     cloudinaryUploads.push(thumbnailUpload.public_id);
     localFiles.push(thumbFile.path);
 
@@ -498,8 +501,9 @@ const addProducts = async (req, res) => {
     const productId = productResult.insertId;
 
     // Insert product categories
-    const categoryIds = product.category_ids.map(Number) || [];
-    console.log("categoryIds", categoryIds);
+    const categoryIds = product.category_ids.includes(",")
+      ? product.category_ids.map(Number)
+      : [parseInt(product.category_ids)];
     if (categoryIds.length > 0) {
       const categoryValues = [];
       const placeholders = [];
@@ -508,7 +512,7 @@ const addProducts = async (req, res) => {
         categoryValues.push(productId, categoryId, 0);
         placeholders.push("(?, ?, ?)");
       }
-      console.log("categoryValues", categoryValues);
+
       const categorySql = `
         INSERT INTO product_categories (product_id, category_id, sort_order)
         VALUES ${placeholders.join(", ")}

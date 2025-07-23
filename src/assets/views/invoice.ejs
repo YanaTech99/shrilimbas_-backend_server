@@ -1,35 +1,185 @@
 <!DOCTYPE html>
 <html>
-<head>
-  <style>
-    body { font-family: Arial, sans-serif; padding: 20px; }
-    h1 { color: #333; }
-    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-    th { background-color: #f2f2f2; }
-  </style>
-</head>
-<body>
-  <h1>Invoice - <%= order.order_number %></h1>
-  <p><strong>Date:</strong> <%= order.date %></p>
-  <p><strong>Customer:</strong> <%= order.customer_name %></p>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Invoice - <%= order.order_number %></title>
+    <style>
+      body {
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        margin: 40px;
+        color: #333;
+      }
 
-  <table>
-    <thead>
-      <tr><th>Product</th><th>Qty</th><th>Price</th><th>Total</th></tr>
-    </thead>
-    <tbody>
-      <% order.items.forEach(item => { %>
+      .header {
+        text-align: center;
+        margin-bottom: 40px;
+      }
+
+      .header h1 {
+        margin: 0;
+        font-size: 28px;
+        color: #2c3e50;
+      }
+
+      .section {
+        margin-bottom: 30px;
+      }
+
+      .section h2 {
+        font-size: 16px;
+        border-bottom: 1px solid #ccc;
+        padding-bottom: 5px;
+        margin-bottom: 10px;
+        color: #555;
+      }
+
+      .info p {
+        margin: 4px 0;
+        font-size: 14px;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 10px;
+      }
+
+      th,
+      td {
+        border: 1px solid #ddd;
+        padding: 10px;
+        font-size: 14px;
+      }
+
+      th {
+        background-color: #f4f6f8;
+        text-align: left;
+        color: #333;
+      }
+
+      tfoot td {
+        font-weight: bold;
+        background-color: #f9f9f9;
+      }
+
+      .totals {
+        float: right;
+        width: 50%;
+        margin-top: 20px;
+      }
+
+      .totals table {
+        width: 100%;
+      }
+
+      .footer {
+        margin-top: 60px;
+        text-align: center;
+        font-size: 12px;
+        color: #888;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="header">
+      <h1>Invoice</h1>
+      <p>Order #: <strong><%= order.order_number %></strong></p>
+      <p>Date: <%= order.date %> | Time: <%= order.time %></p>
+    </div>
+
+    <div class="section info">
+      <h2>Customer Information</h2>
+      <p><strong>Name:</strong> <%= order.customer.name %></p>
+      <p><strong>Email:</strong> <%= order.customer.email %></p>
+      <p><strong>Phone:</strong> <%= order.customer.phone %></p>
+    </div>
+
+    <div class="section info">
+      <h2>Delivery Address</h2>
+      <p><%= order.delivery_address.address %></p>
+      <p>
+        <%= order.delivery_address.city %>, <%= order.delivery_address.state %>,
+        <%= order.delivery_address.country %> - <%=
+        order.delivery_address.postal_code %>
+      </p>
+      <% if (order.delivery_address.instructions) { %>
+      <p>
+        <strong>Instructions:</strong> <%= order.delivery_address.instructions
+        %>
+      </p>
+      <% } %>
+    </div>
+
+    <div class="section info">
+      <h2>Payment</h2>
+      <p><strong>Method:</strong> <%= order.payment_method %></p>
+      <p><strong>Status:</strong> <%= order.payment_status %></p>
+    </div>
+
+    <div class="section">
+      <h2>Order Items</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Product</th>
+            <th>SKU</th>
+            <th>Qty</th>
+            <th>Price</th>
+            <th>Discount</th>
+            <th>Tax</th>
+            <th>Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% order.items.forEach(item => { %>
+          <tr>
+            <td><%= item.name %></td>
+            <td><%= item.sku %></td>
+            <td><%= item.quantity %></td>
+            <td>₹<%= item.price_per_unit.toFixed(2) %></td>
+            <td>₹<%= item.discount_per_unit.toFixed(2) %></td>
+            <td>₹<%= item.tax_per_unit.toFixed(2) %></td>
+            <td>₹<%= item.total.toFixed(2) %></td>
+          </tr>
+          <% }); %>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="totals">
+      <table>
         <tr>
-          <td><%= item.name %></td>
-          <td><%= item.quantity %></td>
-          <td>$<%= item.price %></td>
-          <td>$<%= (item.quantity * item.price).toFixed(2) %></td>
+          <td>Subtotal:</td>
+          <td>₹<%= order.price_summary.sub_total.toFixed(2) %></td>
         </tr>
-      <% }); %>
-    </tbody>
-  </table>
+        <tr>
+          <td>Discount:</td>
+          <td>- ₹<%= order.price_summary.discount.toFixed(2) %></td>
+        </tr>
+        <tr>
+          <td>Tax:</td>
+          <td>₹<%= order.price_summary.tax.toFixed(2) %></td>
+        </tr>
+        <tr>
+          <td>Shipping Fee:</td>
+          <td>₹<%= order.price_summary.shipping_fee.toFixed(2) %></td>
+        </tr>
+        <tr>
+          <td><strong>Total:</strong></td>
+          <td><strong>₹<%= order.price_summary.total.toFixed(2) %></strong></td>
+        </tr>
+      </table>
+    </div>
 
-  <h3>Total Amount: $<%= order.total.toFixed(2) %></h3>
-</body>
+    <% if (order.notes) { %>
+    <div class="section">
+      <h2>Notes</h2>
+      <p><%= order.notes %></p>
+    </div>
+    <% } %>
+
+    <div class="footer">
+      <p>Thank you for shopping with us!</p>
+    </div>
+  </body>
 </html>

@@ -1,14 +1,15 @@
 // users table
 CREATE TABLE users (
   id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
-
+	tenant_id char(36) DEFAULT NULL,
+  user_type enum('CUSTOMER','VENDOR','DELIVERY_BOY') NOT NULL DEFAULT 'CUSTOMER',
+  
   -- Auth Fields
   email VARCHAR(255) UNIQUE,
   phone VARCHAR(20) UNIQUE,
 
   -- User Info
   full_name VARCHAR(255),
-  profile_image TEXT,
   dob DATE,
   gender VARCHAR(10),
 
@@ -26,13 +27,13 @@ CREATE TABLE users (
 
 CREATE TABLE shops (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
+    name VARCHAR(255) DEFAULT "",
     description TEXT,
     logo_url VARCHAR(512),
     license_number VARCHAR(100),
     status ENUM('ACTIVE', 'INACTIVE', 'SUSPENDED') DEFAULT 'ACTIVE',
     
-    email VARCHAR(255) NOT NULL UNIQUE,
+    email VARCHAR(255),
     contact_alternate_phone VARCHAR(20),
     
     address_id INT, -- should reference an addresses table
