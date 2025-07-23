@@ -403,6 +403,13 @@ const addProducts = async (req, res) => {
     });
   }
 
+  // create sort_order
+  const [sortOrder] = await pool.execute(
+    "SELECT IFNULL(MAX(sort_order), 0) + 1 AS sort_order FROM products WHERE shop_id = ?",
+    [shop_id]
+  );
+  product.sort_order = sortOrder[0].sort_order;
+
   const connection = await pool.getConnection();
   const cloudinaryUploads = [];
   const localFiles = [];
@@ -824,7 +831,7 @@ const deleteProduct = async (req, res) => {
   }
 
   const [product] = await pool.execute(
-    "SELECT id FROM products WHERE id = ? AND shop_id = ?",
+    "SELECT * FROM products WHERE id = ? AND shop_id = ?",
     [product_id, shopRows[0].id]
   );
 
@@ -835,6 +842,7 @@ const deleteProduct = async (req, res) => {
   }
 
   const productImage = product[0].thumbnail;
+  const gallery_images = product[0].gallery_images;
 
   const client = await pool.getConnection();
 
@@ -858,6 +866,16 @@ const deleteProduct = async (req, res) => {
       const public_id = productImage.split("/").pop().split(".")[0];
       await deleteFromCloudinary(public_id);
     }
+
+    //delete gallery images
+    // if (gallery_images) {
+    //   const public_ids = gallery_images
+    //     .split(",")
+    //     .map((image) => image.split("/").pop().split(".")[0]);
+    //   await Promise.all(
+    //     public_ids.map((public_id) => deleteFromCloudinary(public_id))
+    //   );
+    // }
 
     await client.commit();
     return res.status(200).json({
@@ -948,7 +966,7 @@ const getPaginatedproducts = async (req, res) => {
 
     // Step 3: Fetch paginated products
     const [productRows] = await pool.execute(
-      `SELECT * FROM products p ${whereSQL} ORDER BY p.created_at ${order} LIMIT ${parseInt(
+      `SELECT * FROM products p ${whereSQL} ORDER BY p.sort_order ${order} LIMIT ${parseInt(
         limit
       )} OFFSET ${offset}`,
       [...values]
@@ -1107,6 +1125,8 @@ const addCategory = async (req, res) => {
     [shop_id[0].id]
   );
 
+  const sort_order = countResult[0].total + 1;
+
   const image = req.file ? req.file : null;
 
   try {
@@ -1115,7 +1135,6 @@ const addCategory = async (req, res) => {
       description,
       slug,
       status = "active",
-      sort_order = countResult[0].total + 1,
       meta_title,
       meta_description,
       parent_id,
