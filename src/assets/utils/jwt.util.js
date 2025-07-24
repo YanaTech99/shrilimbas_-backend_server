@@ -1,9 +1,11 @@
 import jwt from "jsonwebtoken";
 
 const generateAccessToken = (payload) => {
-  return jwt.sign(payload, process.env.JWT_SECRET, {
+  const token = jwt.sign(payload, process.env.JWT_SECRET, {
     expiresIn: "7h",
   });
+
+  return token;
 };
 
 const verifyAccessToken = (token) => {

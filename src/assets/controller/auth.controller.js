@@ -1,5 +1,5 @@
 import pools from "../db/index.js";
-import { generateAccessToken } from "../utils/jwt.util.js";
+import { generateAccessToken, verifyAccessToken } from "../utils/jwt.util.js";
 import { sanitizeInput, validateUserInput } from "../utils/validation.util.js";
 import { generateOTP } from "../utils/generateOTP.util.js";
 import bcrypt from "bcrypt";
@@ -295,12 +295,15 @@ const loginViaPhone = async (req, res) => {
       tenant_id: user.tenant_id,
     });
 
+    const decoded = verifyAccessToken(token);
+
     await client.commit();
 
     return res.status(200).json({
       success: true,
       message,
       token,
+      expiry: decoded.exp,
       user: {
         id: user.id,
         phone: user.phone,
