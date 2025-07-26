@@ -1,5 +1,5 @@
 import pools from "../db/index.js";
-import { generateInvoicePDF } from "../utils/puppeteer.util.js";
+import { generateInvoicePDF } from "../utils/generateInvoice.util.js";
 import { uploadInvoiceToCloudinary } from "../utils/cloudinary.util.js";
 import fs from "fs";
 import crypto from "crypto";
