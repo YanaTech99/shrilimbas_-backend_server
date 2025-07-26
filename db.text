@@ -516,8 +516,3 @@ CREATE TABLE addresses (
         (customer_id IS NULL AND shop_id IS NOT NULL)
     )
 );
-
-
-// update db connection, fix app route, fix auth route, update cart route
-
-// TODO: handle cart items, send empty array in customers data where null, send full cart data in dashboard api, set customers info to empty 

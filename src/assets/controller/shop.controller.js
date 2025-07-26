@@ -1406,9 +1406,12 @@ const updateCategory = async (req, res) => {
 
   try {
     const updateQuery = [];
+    const updatevValues = [];
 
     for (const [key, value] of Object.entries(modifiedInput)) {
+      if (key === "id") continue;
       updateQuery.push(`${key} = ?`);
+      updatevValues.push(value);
     }
 
     if (updateQuery.length === 0) {
@@ -1418,9 +1421,10 @@ const updateCategory = async (req, res) => {
       });
     }
 
+    console.log(updateQuery);
     const [result] = await pool.query(
       `UPDATE categories SET ${updateQuery.join(", ")} WHERE id = ?`,
-      [...Object.values(modifiedInput), id]
+      [updatevValues, id]
     );
 
     if (result.affectedRows === 0) {

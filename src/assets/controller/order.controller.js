@@ -2,6 +2,7 @@ import pools from "../db/index.js";
 import { generateInvoicePDF } from "../utils/puppeteer.util.js";
 import { uploadInvoiceToCloudinary } from "../utils/cloudinary.util.js";
 import fs from "fs";
+import crypto from "crypto";
 
 const placeOrder = async (req, res) => {
   const pool = pools[req.tenantId];
