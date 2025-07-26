@@ -5,12 +5,13 @@ import {
   deleteFromCloudinary,
 } from "../utils/cloudinary.util.js";
 import fs from "fs";
+import { defaultProfileUrl } from "../../constants.js";
 
 const updateProfile = async (req, res) => {
   const pool = pools[req.tenantId];
   const { id: user_id } = req.user;
   const [customer_id] = await pool.query(
-    `SELECT id FROM customers WHERE id = ?`,
+    `SELECT * FROM customers WHERE id = ?`,
     [user_id]
   );
 
@@ -21,7 +22,14 @@ const updateProfile = async (req, res) => {
     });
   }
 
-  if (req.body === undefined || Object.keys(req.body).length === 0) {
+  if (
+    req.body === undefined &&
+    Object.keys(req.body).length === 0 &&
+    !req.file
+  ) {
+    if (req.file.path) {
+      fs.unlinkSync(req.file.path);
+    }
     return res.status(400).json({
       success: false,
       error: "No data provided",
@@ -115,6 +123,20 @@ const updateProfile = async (req, res) => {
     }
 
     if (profileImage && profileImage.path) {
+      if (
+        customer_id[0].profile_image_url &&
+        customer_id[0].profile_image_url !== "" &&
+        customer_id[0].profile_image_url !== defaultProfileUrl
+      ) {
+        const urlArray = customer_id[0].profile_image_url.split("/");
+        const public_id =
+          urlArray[urlArray.length - 2] +
+          "/" +
+          urlArray[urlArray.length - 1].split(".")[0];
+
+        await deleteFromCloudinary(public_id);
+      }
+
       const { secure_url, public_id } = await uploadImageToCloudinary(
         profileImage.path
       );

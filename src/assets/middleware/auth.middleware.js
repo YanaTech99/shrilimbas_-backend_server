@@ -22,7 +22,7 @@ const authenticateToken = async (req, res, next) => {
       [decoded.id]
     );
 
-    if (!user)
+    if (!user || user.length === 0)
       return res.status(404).json({ success: false, error: "User not found" });
 
     req.user = user[0];
