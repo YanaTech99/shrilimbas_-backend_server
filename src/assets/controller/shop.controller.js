@@ -377,14 +377,24 @@ const addProducts = async (req, res) => {
   }
 
   const shop_id = shops[0].id;
-  const fomattedData =
+  const formattedData =
     typeof req.body.product === "string"
       ? JSON.parse(req.body.product)
       : req.body;
 
-  const product = sanitizeInput(fomattedData);
+  const product = sanitizeInput(formattedData);
   const variants = product.variants || [];
-  const productFiles = req.files || {};
+
+  // Group multer.any() files by fieldname
+  const productFilesArray = req.files || [];
+  const productFiles = {};
+  for (const file of productFilesArray) {
+    if (!productFiles[file.fieldname]) {
+      productFiles[file.fieldname] = [];
+    }
+    productFiles[file.fieldname].push(file);
+  }
+
   const requiredFields = ["product_name", "sku", "mrp", "selling_price"];
   for (const field of requiredFields) {
     if (!product[field]) {
@@ -395,7 +405,6 @@ const addProducts = async (req, res) => {
     }
   }
 
-  // Ensure thumbnail image is present
   if (!productFiles.thumbnail || productFiles.thumbnail.length === 0) {
     return res.status(400).json({
       success: false,
@@ -403,7 +412,6 @@ const addProducts = async (req, res) => {
     });
   }
 
-  // create sort_order
   const [sortOrder] = await pool.execute(
     "SELECT IFNULL(MAX(sort_order), 0) + 1 AS sort_order FROM products WHERE shop_id = ?",
     [shop_id]
@@ -417,7 +425,6 @@ const addProducts = async (req, res) => {
   try {
     await connection.beginTransaction();
 
-    // Upload product thumbnail
     const thumbFile = productFiles.thumbnail[0];
     const thumbnailUpload = await uploadImageToCloudinary(
       thumbFile.path,
@@ -437,6 +444,14 @@ const addProducts = async (req, res) => {
         localFiles.push(img.path);
         galleryImages.push(uploaded.secure_url);
       }
+    }
+
+    // ✅ Sum up stock quantity from variants
+    if (variants.length > 0) {
+      product.stock_quantity = variants.reduce((sum, v) => {
+        return sum + (parseInt(v.stock) || 0);
+      }, 0);
+      product.is_in_stock = product.stock_quantity > 0;
     }
 
     const productFields = [
@@ -503,14 +518,19 @@ const addProducts = async (req, res) => {
       INSERT INTO products (${productFields.join(", ")})
       VALUES (${productFields.map(() => "?").join(", ")})
     `;
-
     const [productResult] = await connection.execute(productSql, insertValues);
     const productId = productResult.insertId;
 
     // Insert product categories
-    const categoryIds = product.category_ids.includes(",")
-      ? product.category_ids.map(Number)
-      : [parseInt(product.category_ids)];
+    let categoryIds = [];
+    if (Array.isArray(product.category_ids)) {
+      categoryIds = product.category_ids.map(Number);
+    } else if (typeof product.category_ids === "string") {
+      categoryIds = product.category_ids
+        .split(",")
+        .map((id) => parseInt(id.trim()));
+    }
+
     if (categoryIds.length > 0) {
       const categoryValues = [];
       const placeholders = [];
@@ -561,11 +581,13 @@ const addProducts = async (req, res) => {
       const variantValues = [];
       const variantPlaceholders = [];
 
-      for (let i = 0; i < variants.length; i++) {
+      for (let i = 1; i < variants.length; i++) {
         const variant = variants[i];
 
         if (!variant.sku || !variant.base_price) {
-          throw new Error("Each variant must have `sku` and `base_price`");
+          throw new Error(
+            `Each variant must have \`sku\` and \`base_price\` (index ${i})`
+          );
         }
 
         const thumbnailFile = productFiles[`variant_thumbnail_${i}`]?.[0];
@@ -620,7 +642,6 @@ const addProducts = async (req, res) => {
   } catch (error) {
     await connection.rollback();
 
-    // Delete uploaded cloudinary images
     for (const publicId of cloudinaryUploads) {
       try {
         await deleteFromCloudinary(publicId);
@@ -636,7 +657,6 @@ const addProducts = async (req, res) => {
       error: error.message,
     });
   } finally {
-    // Remove local files
     for (const filePath of localFiles) {
       if (fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);
@@ -912,7 +932,7 @@ const getPaginatedproducts = async (req, res) => {
     brand_id,
     category_id,
     search,
-    order,
+    order = "DESC",
   } = req.query;
 
   const offset = (parseInt(page) - 1) * parseInt(limit);

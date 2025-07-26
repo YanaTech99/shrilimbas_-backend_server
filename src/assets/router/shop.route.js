@@ -26,15 +26,7 @@ router
   .route("/addBrand")
   .post(authenticateToken, upload.single("brandImage"), addBrand);
 
-router.route("/addProduct").post(
-  authenticateToken,
-  upload.fields([
-    { name: "thumbnail", maxCount: 1 },
-    { name: "gallery_images", maxCount: 5 },
-    { name: "variant_thumbnail_0", maxCount: 1 },
-  ]),
-  addProducts
-);
+router.route("/addProduct").post(authenticateToken, upload.any(), addProducts);
 
 router.route("/deleteProduct").delete(authenticateToken, deleteProduct);
 

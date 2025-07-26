@@ -86,6 +86,7 @@ const modifyProductResponse = async (data, tenantId) => {
     data.map(async (product) => {
       const product_id = product.id;
 
+      // Parse JSON fields
       const fields = [
         "specifications",
         "tags",
@@ -103,6 +104,7 @@ const modifyProductResponse = async (data, tenantId) => {
         }
       }
 
+      // Fetch categories
       const [categories] = await pool.execute(
         `
         SELECT title FROM categories
@@ -113,8 +115,15 @@ const modifyProductResponse = async (data, tenantId) => {
       `,
         [product_id]
       );
-
       const categoriesArray = categories.map((category) => category.title);
+
+      // fetch product variants
+      const [variants] = await pool.execute(
+        `SELECT * FROM product_variants WHERE product_id = ?`,
+        [product_id]
+      );
+      product.variants = variants;
+
       return {
         ...product,
         categories: categoriesArray,
