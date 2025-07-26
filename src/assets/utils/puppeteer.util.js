@@ -1,6 +1,6 @@
 import path, { relative } from "path";
 import ejs from "ejs";
-import puppeteer from "puppeteer";
+import puppeteer from "puppeteer-core";
 import fs from "fs";
 import { fileURLToPath } from "url";
 
@@ -23,7 +23,11 @@ const generateInvoicePDF = async (orderData, outputFileName) => {
     const html = await ejs.renderFile(templatePath, { order: orderData });
 
     // 2. Launch Puppeteer and create PDF
-    const browser = await puppeteer.launch({ headless: "new" });
+    const browser = await puppeteer.launch({
+      executablePath: "/usr/bin/chromium",
+      headless: true,
+      args: ["--no-sandbox", "--disable-setuid-sandbox"],
+    });
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: "networkidle0" });
 
