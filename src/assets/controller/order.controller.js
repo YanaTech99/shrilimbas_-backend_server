@@ -294,12 +294,13 @@ const placeOrder = async (req, res) => {
         [cloudinaryUrl, orderId]
       );
     } catch (uploadErr) {
-      console.error("Invoice upload failed:", uploadErr.message);
+      console.error("Invoice upload failed:", uploadErr);
     }
 
     if (fs.existsSync(relativePath)) {
       fs.unlink(relativePath, (err) => {
         if (err) console.error("⚠️ Error deleting PDF:", err.message);
+        else console.log("PDF deleted successfully");
       });
     }
 

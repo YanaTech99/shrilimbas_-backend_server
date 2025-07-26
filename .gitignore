@@ -34,7 +34,9 @@ jspm_packages/
 dist/
 build/
 tmp/
-temp/
+temp/*
+!temp/.gitkeep
+
 
 # Coverage reports
 coverage/
