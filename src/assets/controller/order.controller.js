@@ -223,8 +223,8 @@ const placeOrder = async (req, res) => {
     const orderData = {
       order_id: orderId,
       order_number,
-      date: new Date().toLocaleDateString(),
-      time: new Date().toLocaleTimeString(),
+      date: now.toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata" }),
+      time: now.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" }),
       payment_method,
       payment_status: "unpaid",
       customer: {
@@ -415,15 +415,6 @@ const getOrderByCustomerID = async (req, res) => {
     });
   }
 
-  const { order_number } = req.query;
-
-  if (!order_number || order_number === "" || order_number === "undefined") {
-    return res.status(400).json({
-      success: false,
-      error: "Invalid order number",
-    });
-  }
-
   const connection = await pool.getConnection();
 
   try {
@@ -438,9 +429,8 @@ const getOrderByCustomerID = async (req, res) => {
          coupon_code, coupon_discount, currency,
          status_history
        FROM orders
-       WHERE order_number = ? AND customer_id = ?
-       LIMIT 1`,
-      [order_number, customer_id[0].id]
+       WHERE customer_id = ?`,
+      [customer_id[0].id]
     );
 
     if (orderRows.length === 0) {
@@ -450,77 +440,61 @@ const getOrderByCustomerID = async (req, res) => {
       });
     }
 
-    const order = orderRows[0];
-    const orderId = orderRows[0].id;
+    const orderIds = orderRows.map((order) => order.id);
+    const [order] = orderRows;
 
     // Get order items
-    const [items] = await connection.execute(
-      `SELECT 
-         product_id, product_variant_id, quantity,
-         price_per_unit, discount_per_unit, tax_per_unit,
-         total_price, sku, product_snapshot
-       FROM order_items
-       WHERE order_id = ?`,
-      [orderId]
-    );
+    let items = [];
 
-    const formattedItems = items.map((item) => {
-      return {
-        product_id: item.product_id,
-        variant_id: item.product_variant_id,
-        quantity: item.quantity,
-        sku: item.sku,
-        price: {
-          unit: item.price_per_unit,
-          discount: item.discount_per_unit,
-          tax: item.tax_per_unit,
-          total: item.total_price,
+    for (const orderId of orderIds) {
+      const [orderItems] = await connection.execute(
+        `SELECT * FROM order_items WHERE order_id = ?`,
+        [orderId]
+      );
+      items = items.concat(orderItems);
+    }
+
+    const formattedResponse = orderRows.map((order) => ({
+      id: order.id,
+      order_number: order.order_number,
+      status: order.order_status,
+      placed_at: order.order_date,
+      delivered_at: order.delivery_date,
+      delivery: {
+        address: order.delivery_address,
+        city: order.delivery_city,
+        state: order.delivery_state,
+        country: order.delivery_country,
+        postal_code: order.delivery_postal_code,
+        instructions: order.delivery_instructions,
+        coordinates: {
+          lat: order.delivery_latitude,
+          lng: order.delivery_longitude,
         },
-        snapshot:
-          typeof item.product_snapshot === "string"
-            ? JSON.parse(item.product_snapshot)
-            : item.product_snapshot,
-      };
-    });
+      },
+      payment: {
+        method: order.payment_method,
+        status: order.payment_status,
+        subtotal: order.sub_total,
+        discount: order.discount_amount,
+        tax: order.tax_amount,
+        shipping: order.shipping_fee,
+        total: order.total_amount,
+        currency: order.currency,
+        coupon: order.coupon_code,
+        coupon_discount: order.coupon_discount,
+      },
+      items: items.filter((item) => item.order_id === order.id),
+      status_history:
+        typeof order.status_history === "string"
+          ? JSON.parse(order.status_history)
+          : order.status_history,
+    }));
 
     return res.json({
       success: true,
       message: "Order retrieved successfully",
-      data: {
-        order_number: order.order_number,
-        status: order.order_status,
-        placed_at: order.order_date,
-        delivered_at: order.delivery_date,
-        delivery: {
-          address: order.delivery_address,
-          city: order.delivery_city,
-          state: order.delivery_state,
-          country: order.delivery_country,
-          postal_code: order.delivery_postal_code,
-          instructions: order.delivery_instructions,
-          coordinates: {
-            lat: order.delivery_latitude,
-            lng: order.delivery_longitude,
-          },
-        },
-        payment: {
-          method: order.payment_method,
-          status: order.payment_status,
-          subtotal: order.sub_total,
-          discount: order.discount_amount,
-          tax: order.tax_amount,
-          shipping: order.shipping_fee,
-          total: order.total_amount,
-          currency: order.currency,
-          coupon: order.coupon_code,
-          coupon_discount: order.coupon_discount,
-        },
-        items: formattedItems,
-        status_history:
-          typeof order.status_history === "string"
-            ? JSON.parse(order.status_history)
-            : order.status_history,
-      },
+      data: formattedResponse,
     });
   } catch (err) {
     console.error(err);

@@ -516,3 +516,5 @@ CREATE TABLE addresses (
         (customer_id IS NULL AND shop_id IS NOT NULL)
     )
 );
+
+// send phone in profile data, create get orders for customer

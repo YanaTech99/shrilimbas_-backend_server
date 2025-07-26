@@ -21,6 +21,13 @@ const updateProfile = async (req, res) => {
     });
   }
 
+  if (req.body === undefined || Object.keys(req.body).length === 0) {
+    return res.status(400).json({
+      success: false,
+      error: "No data provided",
+    });
+  }
+
   const modifiedInput = Object.entries(req.body).reduce((acc, [key, value]) => {
     if (key === "address") {
       value = typeof value === "string" ? JSON.parse(value) : value;
@@ -35,6 +42,8 @@ const updateProfile = async (req, res) => {
     gender,
     date_of_birth,
     alternate_phone,
+    firm_name,
+    gst_number,
     address = {},
   } = modifiedInput;
 
@@ -62,6 +71,9 @@ const updateProfile = async (req, res) => {
   if (alternate_phone)
     updateQuery.push(`alternate_phone = '${alternate_phone}'`); // Update alternate_phone if provided
 
+  if (firm_name) updateQuery.push(`firm_name = '${firm_name}'`); // Update firm_name if provided
+  if (gst_number) updateQuery.push(`gst_number = '${gst_number}'`); // Update gst_number if provided
+
   const client = await pool.getConnection();
 
   try {
@@ -80,11 +92,6 @@ const updateProfile = async (req, res) => {
           error: "Failed to update profile.",
         });
       }
-    } else {
-      return res.status(400).json({
-        success: false,
-        error: "No data provided to update.",
-      });
     }
 
     if (address && Object.keys(address).length > 0) {
@@ -380,6 +387,13 @@ const getCustomerProfile = async (req, res) => {
       `SELECT * FROM customers WHERE id = ?`,
       [customer_id[0].id]
     );
+
+    const [userPhone] = await client.query(
+      `SELECT phone FROM users WHERE id = ?`,
+      [user_id]
+    );
+
+    customer[0].phone = userPhone[0].phone;
 
     if (!customer || customer.length === 0) {
       return res.status(404).json({

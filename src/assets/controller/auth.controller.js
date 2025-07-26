@@ -4,6 +4,7 @@ import { sanitizeInput, validateUserInput } from "../utils/validation.util.js";
 import { generateOTP } from "../utils/generateOTP.util.js";
 import bcrypt from "bcrypt";
 import { UAParser } from "ua-parser-js";
+import { defaultProfileUrl } from "../../constants.js";
 
 const sendOTP = async (req, res) => {
   const tenantId = req.tenantId;
@@ -244,8 +245,10 @@ const loginViaPhone = async (req, res) => {
       const [profileInsertResult] = await client.execute(
         `INSERT INTO ${profileTable} (${
           user_type === "CUSTOMER" ? "id" : "user_id"
-        }) VALUES (?)`,
-        [newUserRows[0].id]
+        }, ${
+          user_type === "VENDOR" ? "logo_url" : "profile_image_url"
+        }) VALUES (?, ?)`,
+        [newUserRows[0].id, defaultProfileUrl]
       );
 
       if (profileInsertResult.affectedRows === 0) {
