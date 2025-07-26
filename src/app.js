@@ -29,6 +29,12 @@ app.use(express.static("public"));
 
 app.use(cookieParser());
 
+console.log("Cloudinary ENV:", {
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY ? "[OK]" : "[MISSING]",
+  api_secret: process.env.CLOUDINARY_API_SECRET ? "[OK]" : "[MISSING]",
+});
+
 // Import routes
 import authRoutes from "./assets/router/auth.route.js";
 import appRoutes from "./assets/router/app.route.js";
