@@ -3,8 +3,10 @@ import {
   addBrand,
   addCategory,
   addProducts,
+  addVariant,
   deleteCategory,
   deleteProduct,
+  deleteVariant,
   getPaginatedBrands,
   getPaginatedCategories,
   getPaginatedproducts,
@@ -33,15 +35,19 @@ router.route("/deleteProduct").delete(authenticateToken, deleteProduct);
 router.route("/getProducts").get(authenticateToken, getPaginatedproducts);
 
 router
+  .route("/updateProduct")
+  .patch(authenticateToken, upload.any(), updateProduct);
+
+router.route("/addVariant").post(authenticateToken, upload.any(), addVariant);
+
+router.route("/deleteVariant").delete(authenticateToken, deleteVariant);
+
+router
   .route("/addCategory")
   .post(authenticateToken, upload.single("categoryImage"), addCategory);
 
 router.route("/getCategories").get(authenticateToken, getPaginatedCategories);
 router.route("/getBrands").get(authenticateToken, getPaginatedBrands);
-
-router
-  .route("/updateProduct")
-  .patch(authenticateToken, upload.single("thumbnail"), updateProduct);
 
 router.route("/deleteCategory").delete(authenticateToken, deleteCategory);
 router.route("/updateCategory").patch(authenticateToken, updateCategory);

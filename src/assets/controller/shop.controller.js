@@ -8,6 +8,14 @@ import {
 import { sanitizeInput } from "../utils/validation.util.js";
 import { defaultImageUrl } from "../../constants.js";
 
+// Helper to extract Cloudinary public_id from image URL
+function getPublicIdFromUrl(url) {
+  const parts = url.split("/");
+  const file =
+    parts[parts.length - 2] + "/" + parts[parts.length - 1].split(".")[0];
+  return file;
+}
+
 const updateShop = async (req, res) => {
   const pool = pools[req.tenantId];
   const { id: userId } = req.user;
@@ -425,6 +433,7 @@ const addProducts = async (req, res) => {
   try {
     await connection.beginTransaction();
 
+    // Upload thumbnail
     const thumbFile = productFiles.thumbnail[0];
     const thumbnailUpload = await uploadImageToCloudinary(
       thumbFile.path,
@@ -433,13 +442,14 @@ const addProducts = async (req, res) => {
     cloudinaryUploads.push(thumbnailUpload.public_id);
     localFiles.push(thumbFile.path);
 
+    // Upload gallery images
     const galleryImages = [];
     if (
       productFiles.gallery_images &&
       Array.isArray(productFiles.gallery_images)
     ) {
       for (const img of productFiles.gallery_images) {
-        const uploaded = await uploadImageToCloudinary(img.path);
+        const uploaded = await uploadImageToCloudinary(img.path, tenantId);
         cloudinaryUploads.push(uploaded.public_id);
         localFiles.push(img.path);
         galleryImages.push(uploaded.secure_url);
@@ -454,6 +464,7 @@ const addProducts = async (req, res) => {
       product.is_in_stock = product.stock_quantity > 0;
     }
 
+    // ✅ Create product
     const productFields = [
       "product_name",
       "slug",
@@ -508,6 +519,8 @@ const addProducts = async (req, res) => {
             : null;
       } else if (field === "shop_id") {
         value = shop_id;
+      } else if (field === "status") {
+        value = product[field]?.toLowerCase() ?? "active";
       } else {
         value = product[field] ?? null;
       }
@@ -550,6 +563,17 @@ const addProducts = async (req, res) => {
       );
 
       if (categoryResult.affectedRows === 0) {
+        await connection.rollback();
+
+        // Delete uploaded images
+        for (const publicId of cloudinaryUploads) {
+          try {
+            await deleteFromCloudinary(publicId);
+          } catch (cloudErr) {
+            console.error(`Failed to delete cloudinary image: ${publicId}`);
+          }
+        }
+
         return res.status(500).json({
           success: false,
           message: "Failed to insert product categories.",
@@ -581,7 +605,7 @@ const addProducts = async (req, res) => {
       const variantValues = [];
       const variantPlaceholders = [];
 
-      for (let i = 1; i < variants.length; i++) {
+      for (let i = 0; i < variants.length; i++) {
         const variant = variants[i];
 
         if (!variant.sku || !variant.base_price) {
@@ -590,22 +614,22 @@ const addProducts = async (req, res) => {
           );
         }
 
-        const thumbnailFile = productFiles[`variant_thumbnail_${i}`]?.[0];
-        if (!thumbnailFile) {
-          throw new Error(`Thumbnail is required for variant index ${i}`);
+        const thumbnailFile = productFiles[`variant_thumbnail_${i + 1}`]?.[0];
+        let thumbnailUpload = null;
+        if (thumbnailFile && thumbnailFile.path) {
+          thumbnailUpload = await uploadImageToCloudinary(
+            thumbnailFile.path,
+            tenantId
+          );
+          cloudinaryUploads.push(thumbnailUpload.public_id);
+          localFiles.push(thumbnailFile.path);
         }
-
-        const thumbnailUpload = await uploadImageToCloudinary(
-          thumbnailFile.path
-        );
-        cloudinaryUploads.push(thumbnailUpload.public_id);
-        localFiles.push(thumbnailFile.path);
 
         const variantGalleryUrls = [];
         const galleryFiles = productFiles[`variant_gallery_images_${i}`] || [];
 
         for (const g of galleryFiles) {
-          const uploaded = await uploadImageToCloudinary(g.path);
+          const uploaded = await uploadImageToCloudinary(g.path, tenantId);
           cloudinaryUploads.push(uploaded.public_id);
           localFiles.push(g.path);
           variantGalleryUrls.push(uploaded.secure_url);
@@ -613,7 +637,10 @@ const addProducts = async (req, res) => {
 
         const row = variantFields.map((field) => {
           if (field === "product_id") return productId;
-          if (field === "thumbnail") return thumbnailUpload.secure_url;
+          if (field === "thumbnail")
+            return thumbnailUpload !== null
+              ? thumbnailUpload.secure_url
+              : defaultImageUrl;
           if (field === "gallery_images")
             return JSON.stringify(variantGalleryUrls);
           return variant[field] ?? null;
@@ -629,7 +656,27 @@ const addProducts = async (req, res) => {
         INSERT INTO product_variants (${variantFields.join(", ")})
         VALUES ${variantPlaceholders.join(", ")}
       `;
-      await connection.execute(variantSql, variantValues);
+      const [variantResult] = await connection.execute(
+        variantSql,
+        variantValues
+      );
+      if (variantResult.affectedRows === 0) {
+        await connection.rollback();
+
+        // Delete uploaded images
+        for (const publicId of cloudinaryUploads) {
+          try {
+            await deleteFromCloudinary(publicId);
+          } catch (cloudErr) {
+            console.error(`Failed to delete cloudinary image: ${publicId}`);
+          }
+        }
+
+        return res.status(500).json({
+          success: false,
+          message: "Failed to insert product variants.",
+        });
+      }
     }
 
     await connection.commit();
@@ -662,18 +709,14 @@ const addProducts = async (req, res) => {
         fs.unlinkSync(filePath);
       }
     }
-
     connection.release();
   }
 };
 
 const updateProduct = async (req, res) => {
-  const pool = pools[req.tenantId];
+  const tenantId = req.tenantId;
+  const pool = pools[tenantId];
   const { id: user_id, user_type } = req.user;
-  const [shop_id] = await pool.execute(
-    "SELECT id FROM shops WHERE user_id = ?",
-    [user_id]
-  );
 
   if (user_type !== "VENDOR") {
     return res.status(403).json({
@@ -682,147 +725,385 @@ const updateProduct = async (req, res) => {
     });
   }
 
-  if (!shop_id || !shop_id[0]) {
+  const [shopRows] = await pool.execute(
+    "SELECT id FROM shops WHERE user_id = ? AND status = 'ACTIVE' LIMIT 1",
+    [user_id]
+  );
+
+  if (!shopRows.length) {
     return res.status(404).json({
       success: false,
-      message: "Shop not found for this vendor.",
+      message: "Active shop not found for this vendor.",
     });
   }
 
-  const modifiedInput = sanitizeInput(req.body);
+  const shop_id = shopRows[0].id;
+  const formattedData =
+    typeof req.body.product === "string"
+      ? JSON.parse(req.body.product)
+      : req.body;
 
-  const {
-    id: product_id,
-    product_name,
-    barcode,
-    short_description,
-    long_description,
-    specifications,
-    mrp,
-    selling_price,
-    cost_price,
-    tax_percentage,
-    stock_quantity,
-    min_stock_alert,
-    stock_unit,
-    is_in_stock,
-    warehouse_location,
-    tags,
-    attributes,
-    is_featured,
-    is_new_arrival,
-    is_best_seller,
-    product_type,
-    status,
-    meta_title,
-    meta_description,
-    custom_fields,
-  } = modifiedInput;
+  const product = sanitizeInput(formattedData);
+  const product_id = product.product_id;
 
-  const productImage = req.file;
-  let uploadedImage = null;
+  if (!product_id) {
+    return res
+      .status(400)
+      .json({ success: false, message: "Product ID is required." });
+  }
 
-  const [product] = await pool.execute(
-    `SELECT * FROM products WHERE id = ? AND shop_id = ?`,
-    [product_id, shop_id[0].id]
+  const [existingProductRows] = await pool.execute(
+    "SELECT * FROM products WHERE id = ? AND shop_id = ?",
+    [product_id, shop_id]
   );
 
-  if (!product || !product[0]) {
+  if (!existingProductRows.length) {
     return res.status(404).json({
       success: false,
       message: "Product not found.",
     });
   }
 
-  const client = await pool.getConnection();
+  const existingProduct = existingProductRows[0];
+  const connection = await pool.getConnection();
+  const productFilesArray = req.files || [];
+  const productFiles = {};
+  const localFiles = [];
+
+  for (const file of productFilesArray) {
+    if (!productFiles[file.fieldname]) {
+      productFiles[file.fieldname] = [];
+    }
+    productFiles[file.fieldname].push(file);
+    localFiles.push(file.path);
+  }
+
+  const cloudinaryUploads = [];
 
   try {
-    await client.beginTransaction();
+    await connection.beginTransaction();
 
-    const updateQuery = [];
-    const values = [];
+    const updateFields = [];
+    const updateValues = [];
 
-    if (product_name) updateQuery.push(`product_name = ?`);
-    if (barcode) updateQuery.push(`barcode = ?`);
-    if (short_description) updateQuery.push(`short_description = ?`);
-    if (long_description) updateQuery.push(`long_description = ?`);
-    if (specifications) updateQuery.push(`specifications = ?`);
-    if (mrp) updateQuery.push(`mrp = ?`);
-    if (selling_price) updateQuery.push(`selling_price = ?`);
-    if (cost_price) updateQuery.push(`cost_price = ?`);
-    if (tax_percentage) updateQuery.push(`tax_percentage = ?`);
-    if (stock_quantity) updateQuery.push(`stock_quantity = ?`);
-    if (min_stock_alert) updateQuery.push(`min_stock_alert = ?`);
-    if (stock_unit) updateQuery.push(`stock_unit = ?`);
-    if (is_in_stock) updateQuery.push(`is_in_stock = ?`);
-    if (warehouse_location) updateQuery.push(`warehouse_location = ?`);
-    if (tags) updateQuery.push(`tags = ?`);
-    if (attributes) updateQuery.push(`attributes = ?`);
-    if (is_featured) updateQuery.push(`is_featured = ?`);
-    if (is_new_arrival) updateQuery.push(`is_new_arrival = ?`);
-    if (is_best_seller) updateQuery.push(`is_best_seller = ?`);
-    if (product_type) updateQuery.push(`product_type = ?`);
-    if (status) updateQuery.push(`status = ?`);
-    if (meta_title) updateQuery.push(`meta_title = ?`);
-    if (meta_description) updateQuery.push(`meta_description = ?`);
-    if (custom_fields) updateQuery.push(`custom_fields = ?`);
+    // Helper function to update fields if present
+    const updateIfPresent = (field, transform = (v) => v) => {
+      if (field in product) {
+        updateFields.push(`${field} = ?`);
+        updateValues.push(transform(product[field]));
+      }
+    };
 
-    updateQuery.push(`updated_at = NOW()`);
-
-    updateQuery.forEach((_, index) =>
-      values.push(modifiedInput[updateQuery[index]])
-    );
-
-    const [result] = await pool.execute(
-      `UPDATE products SET ${updateQuery.join(
-        ", "
-      )} WHERE id = ? AND shop_id = ?`,
-      [...values, product_id, shop_id[0].id]
-    );
-
-    if (result.affectedRows === 0) {
-      await client.rollback();
-      return res.status(404).json({
-        success: false,
-        message: "Failed to update product.",
-      });
+    const jsonFields = [
+      "tags",
+      "attributes",
+      "specifications",
+      "custom_fields",
+    ];
+    for (const field of jsonFields) {
+      updateIfPresent(field, (v) =>
+        typeof v === "object" ? JSON.stringify(v) : v
+      );
     }
 
-    if (productImage || productImage.path) {
-      uploadedImage = await uploadImageToCloudinary(productImage.path);
+    const directFields = [
+      "product_name",
+      "slug",
+      "sku",
+      "barcode",
+      "short_description",
+      "long_description",
+      "mrp",
+      "selling_price",
+      "cost_price",
+      "tax_percentage",
+      "hsn_code",
+      "min_stock_alert",
+      "stock_unit",
+      "is_in_stock",
+      "warehouse_location",
+      "brand_id",
+      "is_featured",
+      "is_new_arrival",
+      "is_best_seller",
+      "product_type",
+      "status",
+      "meta_title",
+      "meta_description",
+    ];
 
-      if (uploadedImage) {
-        const [result] = await pool.execute(
-          `UPDATE products SET thumbnail = ? WHERE id = ? AND shop_id = ?`,
-          [uploadedImage.secure_url, product_id, shop_id[0].id]
-        );
+    for (const field of directFields) updateIfPresent(field);
 
-        if (result.affectedRows === 0) {
-          await client.rollback();
-          return res.status(404).json({
-            success: false,
-            message: "Failed to update product image.",
-          });
+    // 🔁 Update thumbnail if new file is provided
+    if (productFiles.thumbnail?.[0]) {
+      const uploaded = await uploadImageToCloudinary(
+        productFiles.thumbnail[0].path,
+        tenantId
+      );
+      if (!uploaded?.secure_url) {
+        throw new Error("Failed to upload product thumbnail.");
+      }
+
+      cloudinaryUploads.push(uploaded.public_id);
+      updateFields.push("thumbnail = ?");
+      updateValues.push(uploaded.secure_url);
+
+      if (existingProduct.thumbnail) {
+        const publicId = getPublicIdFromUrl(existingProduct.thumbnail);
+        const result = await deleteFromCloudinary(publicId);
+        if (
+          !result?.result ||
+          (result.result !== "ok" && result.result !== "not found")
+        ) {
+          throw new Error("Failed to delete existing product thumbnail.");
         }
       }
     }
 
-    await client.commit();
+    // 🔁 Update gallery images if provided
+    if (productFiles.gallery_images?.length) {
+      const gallery = [];
+
+      for (const file of productFiles.gallery_images) {
+        const uploaded = await uploadImageToCloudinary(file.path, tenantId);
+        if (!uploaded?.secure_url) {
+          throw new Error("Failed to upload product gallery image.");
+        }
+
+        gallery.push(uploaded.secure_url);
+        cloudinaryUploads.push(uploaded.public_id);
+      }
+
+      updateFields.push("gallery_images = ?");
+      updateValues.push(JSON.stringify(gallery));
+
+      if (existingProduct.gallery_images) {
+        const gallery =
+          typeof existingProduct.gallery_images === "string"
+            ? JSON.parse(existingProduct.gallery_images)
+            : existingProduct.gallery_images;
+
+        for (const image of gallery) {
+          const publicId = getPublicIdFromUrl(image);
+          const result = await deleteFromCloudinary(publicId);
+          if (
+            !result?.result ||
+            (result.result !== "ok" && result.result !== "not found")
+          ) {
+            throw new Error("Failed to delete existing product gallery image.");
+          }
+        }
+      }
+    }
+
+    // 🔁 Update other fields
+    if (updateFields.length) {
+      updateFields.push("updated_at = NOW()");
+      await connection.execute(
+        `UPDATE products SET ${updateFields.join(
+          ", "
+        )} WHERE id = ? AND shop_id = ?`,
+        [...updateValues, product_id, shop_id]
+      );
+    }
+
+    // 🔁 Update categories if provided
+    if (product.category_ids) {
+      let categoryIds = [];
+      if (Array.isArray(product.category_ids)) {
+        categoryIds = product.category_ids.map(Number);
+      } else if (typeof product.category_ids === "string") {
+        categoryIds = product.category_ids
+          .split(",")
+          .map((id) => parseInt(id.trim()));
+      }
+
+      if (categoryIds.length > 0) {
+        // First, delete existing categories
+        await connection.execute(
+          "DELETE FROM product_categories WHERE product_id = ?",
+          [product_id]
+        );
+
+        const categoryValues = [];
+        const placeholders = [];
+
+        for (const categoryId of categoryIds) {
+          categoryValues.push(product_id, categoryId, 0);
+          placeholders.push("(?, ?, ?)");
+        }
+
+        await connection.execute(
+          `INSERT INTO product_categories (product_id, category_id, sort_order) VALUES ${placeholders.join(
+            ", "
+          )}`,
+          categoryValues
+        );
+      }
+    }
+
+    // 🔁 Update variants if provided
+    if (product.variants && Array.isArray(product.variants)) {
+      for (let i = 0; i < product.variants.length; i++) {
+        const variant = product.variants[i];
+        if (!variant.id) continue;
+
+        const [existingVariantRows] = await connection.execute(
+          "SELECT * FROM product_variants WHERE id = ? AND product_id = ?",
+          [variant.id, product_id]
+        );
+
+        if (!existingVariantRows.length) continue;
+
+        const existingVariant = existingVariantRows[0];
+        const fields = [];
+        const values = [];
+
+        const variantFields = [
+          "sku",
+          "barcode",
+          "color",
+          "size",
+          "material",
+          "base_price",
+          "selling_price",
+          "cost_price",
+          "stock",
+          "stock_alert_at",
+          "is_available",
+          "is_visible",
+          "is_deleted",
+        ];
+
+        for (const field of variantFields) {
+          if (field in variant) {
+            fields.push(`${field} = ?`);
+            values.push(variant[field]);
+          }
+        }
+
+        const thumbFile = productFiles[`variant_thumbnail_${i + 1}`]?.[0];
+        if (thumbFile) {
+          const uploaded = await uploadImageToCloudinary(
+            thumbFile.path,
+            tenantId
+          );
+          if (!uploaded?.secure_url) {
+            throw new Error(
+              `Failed to upload variant ${variant.id} thumbnail.`
+            );
+          }
+
+          if (existingVariant.thumbnail) {
+            const public_id = getPublicIdFromUrl(existingVariant.thumbnail);
+            const result = await deleteFromCloudinary(public_id);
+            if (
+              !result?.result ||
+              (result.result !== "ok" && result.result !== "not found")
+            ) {
+              throw new Error(
+                `Failed to delete old variant ${variant.id} thumbnail.`
+              );
+            }
+          }
+          cloudinaryUploads.push(uploaded.public_id);
+          fields.push("thumbnail = ?");
+          values.push(uploaded.secure_url);
+        }
+
+        const galleryFiles =
+          productFiles[`variant_gallery_images_${i + 1}`] || [];
+        if (galleryFiles.length > 0) {
+          const urls = [];
+
+          for (const file of galleryFiles) {
+            const uploaded = await uploadImageToCloudinary(file.path, tenantId);
+            if (!uploaded?.secure_url) {
+              throw new Error(
+                `Failed to upload variant ${variant.id} gallery image.`
+              );
+            }
+
+            cloudinaryUploads.push(uploaded.public_id);
+            urls.push(uploaded.secure_url);
+          }
+
+          fields.push("gallery_images = ?");
+          values.push(JSON.stringify(urls));
+
+          if (existingVariant.gallery_images) {
+            const images =
+              typeof existingVariant.gallery_images === "string"
+                ? JSON.parse(existingVariant.gallery_images)
+                : existingVariant.gallery_images;
+
+            const public_ids = images.map((image) => getPublicIdFromUrl(image));
+            for (const public_id of public_ids) {
+              const result = await deleteFromCloudinary(public_id);
+              if (
+                !result?.result ||
+                (result.result !== "ok" && result.result !== "not found")
+              ) {
+                throw new Error(
+                  `Failed to delete old variant ${variant.id} gallery image.`
+                );
+              }
+            }
+          }
+        }
+
+        // 🧮 Stock Recalculation
+        if (typeof variant.stock === "number") {
+          const [productStock] = await connection.execute(
+            "SELECT stock_quantity FROM products WHERE id = ?",
+            [product_id]
+          );
+          const currentStock = productStock[0].stock_quantity;
+          const newStock = currentStock - existingVariant.stock + variant.stock;
+
+          await connection.execute(
+            "UPDATE products SET stock_quantity = ? WHERE id = ?",
+            [newStock, product_id]
+          );
+        }
+
+        if (fields.length > 0) {
+          await connection.execute(
+            `UPDATE product_variants SET ${fields.join(
+              ", "
+            )} WHERE id = ? AND product_id = ?`,
+            [...values, variant.id, product_id]
+          );
+        }
+      }
+    }
+
+    await connection.commit();
     return res.status(200).json({
       success: true,
       message: "Product updated successfully.",
     });
   } catch (error) {
-    await client.rollback();
-    await deleteFromCloudinary(uploadedImage?.public_id);
-    console.error(error);
+    await connection.rollback();
+    for (const publicId of cloudinaryUploads) {
+      try {
+        await deleteFromCloudinary(publicId);
+      } catch (err) {
+        console.error("Cloudinary cleanup failed:", err.message);
+      }
+    }
+
+    console.error("Update error:", error);
     return res.status(500).json({
       success: false,
       message: "Failed to update product.",
+      error: error.message,
     });
   } finally {
-    fs.unlinkSync(productImage.path);
-    client.release();
+    for (const filePath of localFiles) {
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    }
+    connection.release();
   }
 };
 
@@ -833,69 +1114,132 @@ const deleteProduct = async (req, res) => {
   if (user_type !== "VENDOR") {
     return res.status(403).json({
       success: false,
-      message: "Forbidden: Only vendors can delete their products.",
+      error: "Forbidden: Only vendors can delete their products.",
     });
   }
 
-  const { id: product_id } = req.body;
+  const { product_id } = req.body;
 
   const [shopRows] = await pool.execute(
     "SELECT id FROM shops WHERE user_id = ? AND status = 'ACTIVE' LIMIT 1",
     [user_id]
   );
 
-  if (shopRows.length === 0) {
+  if (!shopRows.length) {
     return res
       .status(404)
-      .json({ success: false, message: "Shop not found for this vendor." });
+      .json({ success: false, error: "Shop not found for this vendor." });
   }
 
-  const [product] = await pool.execute(
+  const shop_id = shopRows[0].id;
+
+  const [productRows] = await pool.execute(
     "SELECT * FROM products WHERE id = ? AND shop_id = ?",
-    [product_id, shopRows[0].id]
+    [product_id, shop_id]
   );
 
-  if (product.length === 0) {
-    return res
-      .status(404)
-      .json({ success: false, message: "Product not found for this vendor." });
+  if (!productRows.length) {
+    return res.status(404).json({ success: false, error: "Product not found" });
   }
 
-  const productImage = product[0].thumbnail;
-  const gallery_images = product[0].gallery_images;
+  const product = productRows[0];
+  const productImage = product.thumbnail;
+  const gallery_images = product.gallery_images;
 
   const client = await pool.getConnection();
 
   try {
-    client.beginTransaction();
+    await client.beginTransaction();
 
-    const [result] = await client.execute(
-      "DELETE FROM products WHERE id = ? AND shop_id = ?",
-      [product_id, shopRows[0].id]
+    //get product variants
+    const [variants] = await client.execute(
+      "SELECT id, thumbnail, gallery_images FROM product_variants WHERE product_id = ?",
+      [product_id]
     );
 
-    if (result.affectedRows === 0) {
-      await client.rollback();
-      return res.status(404).json({
-        success: false,
-        message: "Failed to delete product.",
-      });
+    // Delete product from DB
+    const [deleteResult] = await client.execute(
+      "DELETE FROM products WHERE id = ? AND shop_id = ?",
+      [product_id, shop_id]
+    );
+
+    if (deleteResult.affectedRows === 0) {
+      return res
+        .status(500)
+        .json({ success: false, error: "Failed to delete product" });
     }
 
+    // Delete variant images
+    for (const variant of variants) {
+      // Delete variant thumbnail
+      if (variant.thumbnail) {
+        const public_id = getPublicIdFromUrl(variant.thumbnail);
+        const result = await deleteFromCloudinary(public_id);
+        if (
+          !result?.result ||
+          (result.result !== "ok" && result.result !== "not found")
+        ) {
+          throw new Error("Failed to delete variant thumbnail.");
+        }
+      }
+
+      // Delete variant gallery
+      if (variant.gallery_images) {
+        const images =
+          typeof variant.gallery_images === "string"
+            ? JSON.parse(variant.gallery_images)
+            : variant.gallery_images;
+
+        const public_ids = images.map((url) => getPublicIdFromUrl(url));
+
+        const deletions = await Promise.all(
+          public_ids.map((id) => deleteFromCloudinary(id))
+        );
+        if (
+          deletions.some(
+            (res) =>
+              !res?.result ||
+              (res.result !== "ok" && res.result !== "not found")
+          )
+        ) {
+          throw new Error("Failed to delete variant gallery images.");
+        }
+      }
+    }
+
+    // Delete product thumbnail
     if (productImage) {
-      const public_id = productImage.split("/").pop().split(".")[0];
-      await deleteFromCloudinary(public_id);
+      const public_id = getPublicIdFromUrl(productImage);
+      const result = await deleteFromCloudinary(public_id);
+      if (
+        !result?.result ||
+        (result.result !== "ok" && result.result !== "not found")
+      ) {
+        throw new Error("Failed to delete variant thumbnail.");
+      }
     }
 
-    //delete gallery images
-    // if (gallery_images) {
-    //   const public_ids = gallery_images
-    //     .split(",")
-    //     .map((image) => image.split("/").pop().split(".")[0]);
-    //   await Promise.all(
-    //     public_ids.map((public_id) => deleteFromCloudinary(public_id))
-    //   );
-    // }
+    // Delete product gallery
+    if (gallery_images) {
+      const images =
+        typeof gallery_images === "string"
+          ? JSON.parse(gallery_images)
+          : gallery_images;
+
+      const public_ids = images.map(getPublicIdFromUrl);
+
+      const deletions = await Promise.all(
+        public_ids.map((id) => deleteFromCloudinary(id))
+      );
+      if (
+        deletions.some(
+          (res) =>
+            !res?.result || (res.result !== "ok" && res.result !== "not found")
+        )
+      ) {
+        throw new Error("Failed to delete product gallery images.");
+      }
+    }
 
     await client.commit();
     return res.status(200).json({
@@ -904,12 +1248,322 @@ const deleteProduct = async (req, res) => {
     });
   } catch (error) {
     await client.rollback();
-    console.error(error);
+    console.error("Delete product error:", error);
     return res.status(500).json({
       success: false,
-      message: "Failed to delete product.",
+      error: error.message || "Failed to delete product.",
     });
   } finally {
+    client.release();
+  }
+};
+
+const deleteVariant = async (req, res) => {
+  const pool = pools[req.tenantId];
+  const { id: user_id, user_type } = req.user;
+
+  if (user_type !== "VENDOR") {
+    return res.status(403).json({
+      success: false,
+      error: "Forbidden: Only vendors can delete their products.",
+    });
+  }
+
+  const { variant_id } = req.body;
+
+  const [shopRows] = await pool.execute(
+    "SELECT id FROM shops WHERE user_id = ? AND status = 'ACTIVE' LIMIT 1",
+    [user_id]
+  );
+
+  if (!shopRows.length) {
+    return res
+      .status(404)
+      .json({ success: false, error: "Shop not found for this vendor." });
+  }
+
+  const shop_id = shopRows[0].id;
+
+  const [variantRows] = await pool.execute(
+    "SELECT * FROM product_variants WHERE id = ?",
+    [variant_id]
+  );
+
+  if (!variantRows.length) {
+    return res
+      .status(404)
+      .json({ success: false, error: "Variant not found." });
+  }
+
+  const variant = variantRows[0];
+  const thumbnail = variant.thumbnail;
+  const gallery_images = variant.gallery_images;
+  const variantStock = variant.stock;
+
+  const client = await pool.getConnection();
+
+  try {
+    await client.beginTransaction();
+
+    // Delete variant from DB
+    const [deleteResult] = await client.execute(
+      "DELETE FROM product_variants WHERE id = ?",
+      [variant_id]
+    );
+
+    if (deleteResult.affectedRows === 0) {
+      return res
+        .status(500)
+        .json({ success: false, error: "Failed to delete variant." });
+    }
+
+    // update product stock
+    const [updateProductResult] = await client.execute(
+      "UPDATE products SET stock_quantity = stock_quantity - ? WHERE id = ?",
+      [variantStock, variant.product_id]
+    );
+
+    if (updateProductResult.affectedRows === 0) {
+      throw new Error("Failed to update product stock.");
+    }
+
+    // Delete variant images
+    if (thumbnail && thumbnail !== "") {
+      const public_id = getPublicIdFromUrl(thumbnail);
+      const result = await deleteFromCloudinary(public_id);
+      if (
+        !result?.result ||
+        (result.result !== "ok" && result.result !== "not found")
+      ) {
+        throw new Error("Failed to delete variant thumbnail.");
+      }
+    }
+
+    if (gallery_images) {
+      const images =
+        typeof gallery_images === "string"
+          ? JSON.parse(gallery_images)
+          : gallery_images;
+
+      const public_ids = images.map((url) => getPublicIdFromUrl(url));
+
+      const deletions = await Promise.all(
+        public_ids.map((id) => deleteFromCloudinary(id))
+      );
+      if (
+        deletions.some(
+          (res) =>
+            !res?.result || (res.result !== "ok" && res.result !== "not found")
+        )
+      ) {
+        throw new Error("Failed to delete variant gallery images.");
+      }
+    }
+
+    await client.commit();
+    return res.status(200).json({
+      success: true,
+      message: "Variant deleted successfully.",
+    });
+  } catch (error) {
+    await client.rollback();
+    console.error("Delete variant error:", error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || "Failed to delete variant.",
+    });
+  } finally {
+    client.release();
+  }
+};
+
+const addVariant = async (req, res) => {
+  const tenantId = req.tenantId;
+  const pool = pools[tenantId];
+  const { id: user_id, user_type } = req.user;
+
+  if (user_type !== "VENDOR") {
+    return res.status(403).json({
+      success: false,
+      error: "Forbidden: Only vendors can add variants to their products.",
+    });
+  }
+
+  const formattedData =
+    typeof req.body.variant === "string"
+      ? JSON.parse(req.body.variant)
+      : req.body.variant;
+
+  const variant = sanitizeInput(formattedData);
+  const product_id = req.body.product_id;
+
+  const [shopRows] = await pool.execute(
+    "SELECT id FROM shops WHERE user_id = ? AND status = 'ACTIVE' LIMIT 1",
+    [user_id]
+  );
+
+  if (!shopRows?.length) {
+    return res
+      .status(404)
+      .json({ success: false, error: "Shop not found for this vendor." });
+  }
+
+  const shop_id = shopRows[0].id;
+
+  const [productRows] = await pool.execute(
+    "SELECT * FROM products WHERE id = ? AND shop_id = ?",
+    [parseInt(product_id), shop_id]
+  );
+
+  if (!productRows?.length) {
+    return res
+      .status(404)
+      .json({ success: false, error: "Product not found." });
+  }
+
+  let thumbnail = null;
+  const gallery_images = [];
+  const uploadedImages = [];
+
+  req.files.forEach((file) => {
+    if (file.fieldname === "thumbnail") {
+      thumbnail = file.path;
+    } else if (file.fieldname === "gallery_images") {
+      gallery_images.push(file.path);
+    }
+  });
+
+  const client = await pool.getConnection();
+
+  try {
+    await client.beginTransaction();
+
+    // Insert variant
+    const insertQuery = [];
+    const values = [];
+    const placeholders = [];
+
+    for (const [key, value] of Object.entries(variant)) {
+      insertQuery.push(`\`${key}\``);
+      values.push(value);
+      placeholders.push(`?`);
+    }
+
+    insertQuery.push("product_id");
+    values.push(parseInt(product_id));
+    placeholders.push("?");
+
+    const [insertResult] = await client.execute(
+      `INSERT INTO product_variants (${insertQuery.join(
+        ", "
+      )}) VALUES (${placeholders.join(", ")})`,
+      values
+    );
+
+    if (insertResult.affectedRows === 0) {
+      await client.rollback();
+      return res
+        .status(500)
+        .json({ success: false, error: "Failed to add variant." });
+    }
+
+    const variant_id = insertResult.insertId;
+
+    // Update product stock
+    const [stockResult] = await client.execute(
+      `UPDATE products SET stock_quantity = stock_quantity + ? WHERE id = ?`,
+      [variant.stock, product_id]
+    );
+
+    if (stockResult.affectedRows === 0) {
+      await client.rollback();
+      return res
+        .status(500)
+        .json({ success: false, error: "Failed to update product stock." });
+    }
+
+    // Upload images
+    let thumbnailUrl = null;
+    const gallery_imagesUrl = [];
+
+    if (thumbnail) {
+      const uploadResult = await uploadImageToCloudinary(thumbnail, tenantId);
+      if (!uploadResult?.secure_url) {
+        throw new Error("Failed to upload variant thumbnail.");
+      }
+
+      uploadedImages.push(uploadResult.public_id);
+      thumbnailUrl = uploadResult.secure_url;
+    }
+
+    if (gallery_images?.length) {
+      const uploads = await Promise.all(
+        gallery_images.map((imgPath) =>
+          uploadImageToCloudinary(imgPath, tenantId)
+        )
+      );
+
+      const failed = uploads.some((res) => !res?.secure_url);
+      if (failed) {
+        throw new Error("Failed to upload variant gallery images.");
+      }
+
+      uploadedImages.push(...uploads.map((res) => res.public_id));
+      gallery_imagesUrl.push(...uploads.map((res) => res.secure_url));
+    }
+
+    const [updateResult] = await client.execute(
+      `UPDATE product_variants SET thumbnail = ?, gallery_images = ? WHERE id = ?`,
+      [
+        thumbnailUrl || defaultImageUrl,
+        JSON.stringify(gallery_imagesUrl),
+        variant_id,
+      ]
+    );
+
+    if (updateResult.affectedRows === 0) {
+      await client.rollback();
+      return res
+        .status(500)
+        .json({ success: false, error: "Failed to update variant images." });
+    }
+
+    await client.commit();
+
+    return res.status(200).json({
+      success: true,
+      message: "Variant added successfully.",
+    });
+  } catch (error) {
+    await client.rollback();
+
+    for (const publicId of uploadedImages) {
+      try {
+        await deleteFromCloudinary(publicId);
+      } catch (cloudErr) {
+        console.error(
+          `Failed to delete Cloudinary image [${publicId}]:`,
+          cloudErr.message
+        );
+      }
+    }
+
+    console.error("Variant add error:", error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || "Failed to add variant.",
+    });
+  } finally {
+    if (thumbnail && fs.existsSync(thumbnail)) {
+      fs.unlinkSync(thumbnail);
+    }
+
+    for (const image of gallery_images) {
+      if (image && fs.existsSync(image)) {
+        fs.unlinkSync(image);
+      }
+    }
+
     client.release();
   }
 };
@@ -1032,12 +1686,8 @@ const getPaginatedproducts = async (req, res) => {
 
     // Step 6: Get product variants
     const [variantRows] = await pool.execute(
-      `SELECT
-         product_id, sku, color, size, material, selling_price
-       FROM product_variants
-       WHERE product_id IN (${productIds
-         .map(() => "?")
-         .join(",")}) AND is_deleted = FALSE`,
+      `SELECT * FROM product_variants
+       WHERE product_id IN (${productIds.map(() => "?").join(",")})`,
       productIds
     );
 
@@ -1084,16 +1734,16 @@ const getPaginatedproducts = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: "Products fetched successfully.",
-      data: data,
       pagination: {
         total,
         page: parseInt(page),
         limit: parseInt(limit),
         totalPages: Math.ceil(total / limit),
       },
+      data: data,
     });
   } catch (error) {
-    console.error("Error fetching products:", error.message);
+    console.error("Error fetching products:", error);
     return res.status(500).json({
       success: false,
       message: "Failed to fetch products.",
@@ -1482,4 +2132,6 @@ export {
   getPaginatedBrands,
   deleteCategory,
   updateCategory,
+  deleteVariant,
+  addVariant,
 };

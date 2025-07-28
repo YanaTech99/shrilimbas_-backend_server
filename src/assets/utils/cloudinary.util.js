@@ -9,6 +9,9 @@ cloudinary.config({
 });
 
 const uploadImageToCloudinary = async (filePath, tenantId) => {
+  if (tenantId === undefined) {
+    throw new Error("Tenant ID is required");
+  }
   const folder = tenantId === "otkhzjwq" ? "toolbizz" : "shrilimbas";
 
   try {
@@ -29,7 +32,8 @@ const uploadImageToCloudinary = async (filePath, tenantId) => {
 const deleteFromCloudinary = async (publicId) => {
   try {
     if (!publicId) return; // No need to delete if publicId is not provided
-    await cloudinary.uploader.destroy(publicId);
+    const result = await cloudinary.uploader.destroy(publicId);
+    return result;
   } catch (error) {
     console.error("Error deleting image from Cloudinary:", error);
     throw error;

@@ -517,4 +517,8 @@ CREATE TABLE addresses (
     )
 );
 
-// send phone in profile data, create get orders for customer
+// add product working, change default values
+// update product working fine
+// add variant working fine
+// delete variant working fine
+// delete product working fine
