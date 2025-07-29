@@ -8,7 +8,8 @@ import fs from "fs";
 import { defaultProfileUrl } from "../../constants.js";
 
 const updateProfile = async (req, res) => {
-  const pool = pools[req.tenantId];
+  const tenantId = req.tenantId;
+  const pool = pools[tenantId];
   const { id: user_id } = req.user;
   const [customer_id] = await pool.query(
     `SELECT * FROM customers WHERE id = ?`,
@@ -138,7 +139,8 @@ const updateProfile = async (req, res) => {
       }
 
       const { secure_url, public_id } = await uploadImageToCloudinary(
-        profileImage.path
+        profileImage.path,
+        tenantId
       );
 
       uploadedImage = public_id;
