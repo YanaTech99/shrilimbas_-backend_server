@@ -24,8 +24,16 @@ const getCartData = async (customer_id, tenantID) => {
           `SELECT * FROM products WHERE id = ?`,
           [item.product_id]
         );
-
         const product = productRows[0];
+
+        let variants = [];
+        if (item.product_variant_id !== null) {
+          const [variantRows] = await connection.execute(
+            `SELECT * FROM product_variants WHERE id = ?`,
+            [item.product_variant_id]
+          );
+          variants.push(variantRows[0]);
+        }
 
         return {
           id: product.id,
@@ -39,6 +47,7 @@ const getCartData = async (customer_id, tenantID) => {
           tax_per_unit: item.tax_per_unit,
           sku: item.sku,
           product_snapshot: item.product_snapshot,
+          variants,
           finalAmmount: product.selling_price,
         };
       })

@@ -73,7 +73,7 @@ const addToCart = async (req, res) => {
 
     // 3. Compute pricing
     const price_per_unit =
-      product.selling_price + (variant?.selling_price || 0);
+      parseInt(product.selling_price) + (parseInt(variant?.selling_price) || 0);
     const discount_per_unit = 0;
     const tax_per_unit = 0; // tax logic can go here
 
