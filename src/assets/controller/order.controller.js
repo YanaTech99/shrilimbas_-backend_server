@@ -53,11 +53,24 @@ const placeOrder = async (req, res) => {
 
     for (const item of items) {
       const [productRow] = await connection.execute(
-        `SELECT p.*, pv.stock, pv.id as variant_id
-         FROM products p
-         LEFT JOIN product_variants pv ON p.id = pv.product_id
-         WHERE p.id = ? AND (pv.id IS NULL OR pv.id = ?)
-         FOR UPDATE`,
+        `SELECT 
+          p.*, 
+          pv.id AS variant_id,
+          pv.sku AS variant_sku,
+          pv.barcode AS variant_barcode,
+          pv.color AS variant_color,
+          pv.size AS variant_size,
+          pv.material AS variant_material,
+          pv.thumbnail AS variant_thumbnail,
+          pv.gallery_images AS variant_gallery_images,
+          pv.base_price AS variant_base_price,
+          pv.selling_price AS variant_selling_price,
+          pv.cost_price AS variant_cost_price,
+          pv.stock AS variant_stock
+        FROM products p
+        LEFT JOIN product_variants pv ON p.id = pv.product_id
+        WHERE p.id = ? AND (pv.id IS NULL OR pv.id = ?)
+        FOR UPDATE`,
         [item.product_id, item.product_variant_id || null]
       );
 
@@ -95,6 +108,26 @@ const placeOrder = async (req, res) => {
         tax_per_unit: tax,
         sku: product.sku || "",
         product_snapshot: JSON.stringify(product),
+        variant_snapshot: product.variant_id
+          ? JSON.stringify({
+              id: product.variant_id,
+              sku: product.variant_sku,
+              barcode: product.variant_barcode,
+              color: product.variant_color,
+              size: product.variant_size,
+              material: product.variant_material,
+              thumbnail: product.variant_thumbnail,
+              gallery_images:
+                product.variant_gallery_images &&
+                typeof product.variant_gallery_images === "string"
+                  ? JSON.parse(product.variant_gallery_images)
+                  : [],
+              base_price: parseFloat(product.variant_base_price),
+              selling_price: parseFloat(product.variant_selling_price),
+              cost_price: parseFloat(product.variant_cost_price),
+              stock: parseInt(product.variant_stock),
+            })
+          : null,
       });
     }
 
@@ -218,6 +251,7 @@ const placeOrder = async (req, res) => {
 
     const user = userDetails[0] || {};
     const customer = customerDetails[0] || {};
+    const now = new Date();
 
     // Prepare order data
     const orderData = {
@@ -246,6 +280,10 @@ const placeOrder = async (req, res) => {
           ? JSON.parse(item.product_snapshot)
           : {};
 
+        const variant = item.variant_snapshot
+          ? JSON.parse(item.variant_snapshot)
+          : null;
+
         const price = item.price_per_unit;
         const discount = item.discount_per_unit;
         const tax = item.tax_per_unit;
@@ -255,10 +293,28 @@ const placeOrder = async (req, res) => {
           name: snapshot.product_name || snapshot.name || "Product",
           sku: item.sku || "",
           quantity: item.quantity,
-          price_per_unit: price,
-          discount_per_unit: discount,
-          tax_per_unit: tax,
-          total: totalPerItem,
+          price_per_unit: item.price_per_unit,
+          discount_per_unit: item.discount_per_unit,
+          tax_per_unit: item.tax_per_unit,
+          total:
+            (item.price_per_unit - item.discount_per_unit + item.tax_per_unit) *
+            item.quantity,
+          variant: variant
+            ? {
+                id: variant.id,
+                sku: variant.sku,
+                barcode: variant.barcode,
+                color: variant.color,
+                size: variant.size,
+                material: variant.material,
+                thumbnail: variant.thumbnail,
+                gallery_images: variant.gallery_images || [],
+                base_price: variant.base_price,
+                selling_price: variant.selling_price,
+                cost_price: variant.cost_price,
+                stock: variant.stock,
+              }
+            : null,
         };
       }),
       price_summary: {
@@ -300,7 +356,6 @@ const placeOrder = async (req, res) => {
     if (fs.existsSync(relativePath)) {
       fs.unlink(relativePath, (err) => {
         if (err) console.error("⚠️ Error deleting PDF:", err.message);
-        else console.log("PDF deleted successfully");
       });
     }
 
