@@ -227,13 +227,6 @@ const getAppData = async (req, res) => {
     let cartData = [];
     if (userId) {
       cartData = await getCartData(customer_id[0][0].id, tenantID);
-
-      if (!cartData.success) {
-        return res.status(400).json({
-          success: false,
-          error: cartData.error,
-        });
-      }
     }
 
     const safe = (data) => {
@@ -267,7 +260,7 @@ const getAppData = async (req, res) => {
         ),
         brands: safe(brands),
         allProducts: await modifyProductResponse(allProducts, tenantID),
-        cartData: cartData.cartItems,
+        cartData: cartData.cartItems || [],
       },
     });
   } catch (error) {
