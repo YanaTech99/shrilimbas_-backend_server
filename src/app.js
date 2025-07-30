@@ -12,28 +12,27 @@ app.use(
   })
 );
 
-app.use(
-  express.json({
-    limit: "16kb",
-  })
-);
+app.use((req, res, next) => {
+  console.log("📩 Content-Type Received:", req.headers["content-type"]);
+  next();
+});
 
-app.use(
-  express.urlencoded({
-    extended: true,
-    limit: "16kb",
-  })
-);
+app.use((req, res, next) => {
+  console.log(req.headers);
+  const contentType = req.headers["content-type"] || "";
+  console.log("Request content-type:", contentType);
+  if (contentType.includes("application/json")) {
+    express.json({ limit: "16kb" })(req, res, next);
+  } else if (contentType.includes("application/x-www-form-urlencoded")) {
+    express.urlencoded({ extended: true, limit: "16kb" })(req, res, next);
+  } else {
+    next();
+  }
+});
 
 app.use(express.static("public"));
 
 app.use(cookieParser());
-
-// console.log("Cloudinary ENV:", {
-//   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-//   api_key: process.env.CLOUDINARY_API_KEY ? "[OK]" : "[MISSING]",
-//   api_secret: process.env.CLOUDINARY_API_SECRET ? "[OK]" : "[MISSING]",
-// });
 
 // Import routes
 import authRoutes from "./assets/router/auth.route.js";
@@ -54,5 +53,16 @@ app.use("/api/v1/products", multiTenantMiddleware, productRoutes);
 app.use("/api/v1/orders", multiTenantMiddleware, orderRoutes);
 app.use("/api/v1/cart", multiTenantMiddleware, cartRoutes);
 app.use("/api/v1/customer", multiTenantMiddleware, customerRoutes);
+
+// ✅ Error-handling middleware
+app.use((err, req, res, next) => {
+  if (err instanceof SyntaxError && err.status === 400 && "body" in err) {
+    console.error("Invalid JSON received:", err.message);
+    return res.status(400).json({ error: "Invalid JSON in request body" });
+  }
+
+  // For all other errors
+  next(err);
+});
 
 export default app;

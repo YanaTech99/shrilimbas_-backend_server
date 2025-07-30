@@ -14,7 +14,7 @@ const router = Router();
 
 router
   .route("/updateProfile")
-  .patch(authenticateToken, upload.single("profileImage"), updateProfile);
+  .post(authenticateToken, upload.single("profileImage"), updateProfile);
 
 router.route("/getCustomerProfile").get(authenticateToken, getCustomerProfile);
 router.route("/getAddresses").get(authenticateToken, getAddresses);
