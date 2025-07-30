@@ -133,12 +133,12 @@ const placeOrder = async (req, res) => {
 
     // Apply coupon logic (stub example)
     let discountAmount = 0;
-    if (coupon_code) {
-      // Apply logic to validate coupon and calculate discountAmount
-      discountAmount = 50; // dummy value
-    }
+    // if (coupon_code) {
+    //   // Apply logic to validate coupon and calculate discountAmount
+    //   discountAmount = 50; // dummy value
+    // }
 
-    const taxAmount = subTotal * 0.1; // 10% tax
+    const taxAmount = 0; // 10% tax
     const shippingFee = 0; // Flat fee (optional logic)
     const totalAmount = subTotal - discountAmount + taxAmount + shippingFee;
 
@@ -296,7 +296,7 @@ const placeOrder = async (req, res) => {
           price_per_unit: item.price_per_unit,
           discount_per_unit: item.discount_per_unit,
           tax_per_unit: item.tax_per_unit,
-          total: totalAmount,
+          total: totalPerItem,
           variant: variant
             ? {
                 id: variant.id,

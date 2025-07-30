@@ -133,10 +133,17 @@ const modifyProductResponse = async (data, tenantId) => {
       );
       product.variants = variants;
 
+      const price = parseFloat(product.selling_price) || 0;
+      const tax = parseFloat(product.tax_percentage || 0);
+      const discount = parseFloat(product.discount || 0);
+
+      const total_price = price - discount + tax;
+      console.log(total_price);
+
       return {
         ...product,
         categories: categoriesArray,
-        finalAmmount: product.selling_price,
+        finalAmmount: total_price,
       };
     })
   );
