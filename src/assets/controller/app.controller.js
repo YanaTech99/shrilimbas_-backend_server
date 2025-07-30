@@ -190,7 +190,7 @@ const getAppData = async (req, res) => {
       client.execute(`
         SELECT * FROM categories
         WHERE status = 'active' AND parent_id IS NULL
-        ORDER BY sort_order LIMIT 10
+        ORDER BY sort_order DESC LIMIT 10
       `),
 
       client.execute(`
