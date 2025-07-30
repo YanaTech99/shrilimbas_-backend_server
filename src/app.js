@@ -18,9 +18,7 @@ app.use((req, res, next) => {
 });
 
 app.use((req, res, next) => {
-  console.log(req.headers);
   const contentType = req.headers["content-type"] || "";
-  console.log("Request content-type:", contentType);
   if (contentType.includes("application/json")) {
     express.json({ limit: "16kb" })(req, res, next);
   } else if (contentType.includes("application/x-www-form-urlencoded")) {
