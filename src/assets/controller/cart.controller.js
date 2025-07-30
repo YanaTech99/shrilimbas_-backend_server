@@ -72,10 +72,24 @@ const addToCart = async (req, res) => {
     }
 
     // 3. Compute pricing
-    const price_per_unit =
-      parseInt(product.selling_price) + (parseInt(variant?.selling_price) || 0);
-    const discount_per_unit = 0;
-    const tax_per_unit = 0; // tax logic can go here
+    let subTotal = 0;
+    const price = parseFloat(product.selling_price);
+    const tax = parseFloat(product.tax_percentage || 0);
+    const discount = parseFloat(product.discount || 0);
+
+    const lineTotal = (price - discount + tax) * item.quantity;
+    subTotal += lineTotal;
+
+    // Apply coupon logic (stub example)
+    let discountAmount = 0;
+    if (coupon_code) {
+      // Apply logic to validate coupon and calculate discountAmount
+      discountAmount = 50; // dummy value
+    }
+
+    const taxAmount = subTotal * 0.1; // 10% tax
+    const shippingFee = 0; // Flat fee (optional logic)
+    const totalAmount = subTotal - discountAmount + taxAmount + shippingFee;
 
     const sku = variant?.sku || product.sku;
 
@@ -83,7 +97,7 @@ const addToCart = async (req, res) => {
       name: product.product_name,
       base_price: product.selling_price,
       variant_price: variant?.selling_price || 0,
-      final_price: price_per_unit,
+      final_price: totalAmount,
       sku,
     });
 
@@ -119,14 +133,15 @@ const addToCart = async (req, res) => {
 
       const [updated] = await connection.execute(
         `UPDATE cart_items
-         SET quantity = ?, price_per_unit = ?, discount_per_unit = ?, tax_per_unit = ?, 
+         SET quantity = ?, price_per_unit = ?, total_price = ?, discount_per_unit = ?, tax_per_unit = ?, 
              sku = ?, product_snapshot = ?, updated_at = CURRENT_TIMESTAMP
          WHERE id = ?`,
         [
           parseInt(quantity),
-          price_per_unit,
-          discount_per_unit,
-          tax_per_unit,
+          price,
+          totalAmount,
+          discountAmount,
+          tax,
           sku,
           product_snapshot,
           existingItem.id,

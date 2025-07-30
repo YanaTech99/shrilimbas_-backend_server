@@ -139,7 +139,7 @@ const placeOrder = async (req, res) => {
     }
 
     const taxAmount = subTotal * 0.1; // 10% tax
-    const shippingFee = 40; // Flat fee (optional logic)
+    const shippingFee = 0; // Flat fee (optional logic)
     const totalAmount = subTotal - discountAmount + taxAmount + shippingFee;
 
     // Insert order
@@ -296,9 +296,7 @@ const placeOrder = async (req, res) => {
           price_per_unit: item.price_per_unit,
           discount_per_unit: item.discount_per_unit,
           tax_per_unit: item.tax_per_unit,
-          total:
-            (item.price_per_unit - item.discount_per_unit + item.tax_per_unit) *
-            item.quantity,
+          total: totalAmount,
           variant: variant
             ? {
                 id: variant.id,
@@ -476,7 +474,7 @@ const getOrderByCustomerID = async (req, res) => {
     // Get order
     const [orderRows] = await connection.execute(
       `SELECT 
-         id, order_number, order_status, order_date, delivery_date,
+         id, order_number, order_status, order_date, delivery_date, invoice_url,
          delivery_address, delivery_city, delivery_state, delivery_country, delivery_postal_code,
          delivery_latitude, delivery_longitude, delivery_instructions,
          payment_method, payment_status,
@@ -512,6 +510,7 @@ const getOrderByCustomerID = async (req, res) => {
     const formattedResponse = orderRows.map((order) => ({
       id: order.id,
       order_number: order.order_number,
+      invoice_url: order.invoice_url,
       status: order.order_status,
       placed_at: order.order_date,
       delivered_at: order.delivery_date,

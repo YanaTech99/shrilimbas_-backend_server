@@ -13,11 +13,6 @@ app.use(
 );
 
 app.use((req, res, next) => {
-  console.log("📩 Content-Type Received:", req.headers["content-type"]);
-  next();
-});
-
-app.use((req, res, next) => {
   const contentType = req.headers["content-type"] || "";
   if (contentType.includes("application/json")) {
     express.json({ limit: "16kb" })(req, res, next);
