@@ -461,7 +461,7 @@ CREATE TABLE otp_requests (
     id INT AUTO_INCREMENT PRIMARY KEY,
 
     phone_number VARCHAR(20) NOT NULL,
-    otp_code VARCHAR(6) NOT NULL,
+    otp_code VARCHAR(100) NOT NULL,
 
     user_agent TEXT,
     browser_name VARCHAR(50),
@@ -517,8 +517,36 @@ CREATE TABLE addresses (
     )
 );
 
-// add product working, change default values
-// update product working fine
-// add variant working fine
-// delete variant working fine
-// delete product working fine
+CREATE TABLE transactions (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+
+    uuid CHAR(36) NOT NULL UNIQUE DEFAULT (UUID()),
+
+    user_id char(36) NOT NULL,
+    order_id INT NOT NULL,
+
+    transaction_reference VARCHAR(100) NOT NULL UNIQUE,
+    payment_gateway VARCHAR(50) NOT NULL,
+
+    amount DECIMAL(10, 2) NOT NULL,
+    currency CHAR(3) NOT NULL DEFAULT 'INR',
+
+    status ENUM('pending', 'processing', 'completed', 'failed', 'refunded', 'cancelled') NOT NULL DEFAULT 'pending',
+
+    payment_method VARCHAR(50),
+    card_last4 CHAR(4),
+    card_type VARCHAR(20),
+
+    transaction_type ENUM('charge', 'refund', 'authorization', 'capture') NOT NULL DEFAULT 'charge',
+
+    paid_at DATETIME,
+    refunded_at DATETIME,
+
+    metadata JSON,
+
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    FOREIGN KEY (order_id) REFERENCES orders(id)
+)

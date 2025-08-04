@@ -8,18 +8,27 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-const uploadImageToCloudinary = async (filePath, tenantId) => {
+const uploadImageToCloudinary = async (filePath, tenantId, baseFolder) => {
   if (tenantId === undefined) {
     throw new Error("Tenant ID is required");
   }
-  const folder = tenantId === "otkhzjwq" ? "toolbizz" : "shrilimbas";
+  let mainFolder = null;
+  if (tenantId === "otkhzjwq") {
+    mainFolder = "toolbizz";
+  } else if (tenantId === "xnprapms") {
+    mainFolder = "shrilimbas";
+  } else if (tenantId === "bjxdtyyy") {
+    mainFolder = "shrilimbas_new";
+  } else {
+    throw new Error("Invalid tenant ID");
+  }
 
   try {
     if (!filePath) return null;
 
     const result = await cloudinary.uploader.upload(filePath, {
       resource_type: "auto",
-      folder: folder,
+      folder: mainFolder + "/" + baseFolder,
     });
     return result;
   } catch (error) {

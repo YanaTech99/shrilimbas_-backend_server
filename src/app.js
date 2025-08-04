@@ -27,15 +27,17 @@ app.use(express.static("public"));
 
 app.use(cookieParser());
 
+// ****************** V1 API ******************
+
 // Import routes
-import authRoutes from "./assets/router/auth.route.js";
-import appRoutes from "./assets/router/app.route.js";
-import shopRoutes from "./assets/router/shop.route.js";
-import sliderRoutes from "./assets/router/slider.route.js";
-import productRoutes from "./assets/router/product.route.js";
-import orderRoutes from "./assets/router/order.route.js";
-import cartRoutes from "./assets/router/cart.route.js";
-import customerRoutes from "./assets/router/customer.route.js";
+import authRoutes from "./assets/V1/router/auth.route.js";
+import appRoutes from "./assets/V1/router/app.route.js";
+import shopRoutes from "./assets/V1/router/shop.route.js";
+import sliderRoutes from "./assets/V1/router/slider.route.js";
+import productRoutes from "./assets/V1/router/product.route.js";
+import orderRoutes from "./assets/V1/router/order.route.js";
+import cartRoutes from "./assets/V1/router/cart.route.js";
+import customerRoutes from "./assets/V1/router/customer.route.js";
 
 // define routes
 app.use("/api/v1/auth", multiTenantMiddleware, authRoutes);
@@ -46,6 +48,32 @@ app.use("/api/v1/products", multiTenantMiddleware, productRoutes);
 app.use("/api/v1/orders", multiTenantMiddleware, orderRoutes);
 app.use("/api/v1/cart", multiTenantMiddleware, cartRoutes);
 app.use("/api/v1/customer", multiTenantMiddleware, customerRoutes);
+
+// ****************** V1 API ******************
+
+// ****************** V2 API ******************
+
+// Import routes
+import authRoutesV2 from "./assets/V2/router/auth.route.js";
+import appRoutesV2 from "./assets/V2/router/app.route.js";
+import cartRoutesV2 from "./assets/V2/router/cart.route.js";
+import customerRoutesV2 from "./assets/V2/router/customer.route.js";
+import orderRoutesV2 from "./assets/V2/router/order.route.js";
+import productRoutesV2 from "./assets/V2/router/product.route.js";
+import sliderRoutesV2 from "./assets/V2/router/slider.route.js";
+import shopRoutesV2 from "./assets/V2/router/shop.route.js";
+
+// define routes
+app.use("/api/v2/auth", multiTenantMiddleware, authRoutesV2);
+app.use("/api/v2/app", multiTenantMiddleware, appRoutesV2);
+app.use("/api/v2/shop", multiTenantMiddleware, shopRoutesV2);
+app.use("/api/v2/slider", sliderRoutesV2);
+app.use("/api/v2/products", multiTenantMiddleware, productRoutesV2);
+app.use("/api/v2/orders", multiTenantMiddleware, orderRoutesV2);
+app.use("/api/v2/cart", multiTenantMiddleware, cartRoutesV2);
+app.use("/api/v2/customer", multiTenantMiddleware, customerRoutesV2);
+
+// ****************** V2 API ******************
 
 // ✅ Error-handling middleware
 app.use((err, req, res, next) => {

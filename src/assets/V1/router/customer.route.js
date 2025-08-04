@@ -7,8 +7,8 @@ import {
   updateAddress,
   updateProfile,
 } from "../controller/customer.controller.js";
-import { authenticateToken } from "../middleware/auth.middleware.js";
-import { upload } from "../middleware/multer.middleware.js";
+import { authenticateToken } from "../../middleware/auth.middleware.js";
+import { upload } from "../../middleware/multer.middleware.js";
 
 const router = Router();
 

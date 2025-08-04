@@ -1,12 +1,12 @@
-import pools from "../db/index.js";
+import pools from "../../db/index.js";
 import fs from "fs";
 import {
   uploadImageToCloudinary,
   deleteFromCloudinary,
-} from "../utils/cloudinary.util.js";
+} from "../../utils/cloudinary.util.js";
 
-import { sanitizeInput } from "../utils/validation.util.js";
-import { defaultImageUrl } from "../../constants.js";
+import { sanitizeInput } from "../../utils/validation.util.js";
+import { defaultImageUrl } from "../../../constants.js";
 
 // Helper to extract Cloudinary public_id from image URL
 function getPublicIdFromUrl(url) {
@@ -391,7 +391,11 @@ const addProducts = async (req, res) => {
       : req.body;
 
   const product = sanitizeInput(formattedData);
-  const variants = product.variants || [];
+  console.log(product);
+  const variants =
+    typeof product.variants === "string"
+      ? JSON.parse(product.variants)
+      : product.variants;
 
   // Group multer.any() files by fieldname
   const productFilesArray = req.files || [];
@@ -403,7 +407,7 @@ const addProducts = async (req, res) => {
     productFiles[file.fieldname].push(file);
   }
 
-  const requiredFields = ["product_name", "sku", "mrp", "selling_price"];
+  const requiredFields = ["product_name", "sku"];
   for (const field of requiredFields) {
     if (!product[field]) {
       return res.status(400).json({
@@ -411,13 +415,6 @@ const addProducts = async (req, res) => {
         message: `Missing required field: ${field}`,
       });
     }
-  }
-
-  if (!productFiles.thumbnail || productFiles.thumbnail.length === 0) {
-    return res.status(400).json({
-      success: false,
-      message: "Thumbnail image is required for the product.",
-    });
   }
 
   const [sortOrder] = await pool.execute(
@@ -428,33 +425,9 @@ const addProducts = async (req, res) => {
 
   const connection = await pool.getConnection();
   const cloudinaryUploads = [];
-  const localFiles = [];
 
   try {
     await connection.beginTransaction();
-
-    // Upload thumbnail
-    const thumbFile = productFiles.thumbnail[0];
-    const thumbnailUpload = await uploadImageToCloudinary(
-      thumbFile.path,
-      tenantId
-    );
-    cloudinaryUploads.push(thumbnailUpload.public_id);
-    localFiles.push(thumbFile.path);
-
-    // Upload gallery images
-    const galleryImages = [];
-    if (
-      productFiles.gallery_images &&
-      Array.isArray(productFiles.gallery_images)
-    ) {
-      for (const img of productFiles.gallery_images) {
-        const uploaded = await uploadImageToCloudinary(img.path, tenantId);
-        cloudinaryUploads.push(uploaded.public_id);
-        localFiles.push(img.path);
-        galleryImages.push(uploaded.secure_url);
-      }
-    }
 
     // ✅ Sum up stock quantity from variants
     if (variants.length > 0) {
@@ -465,49 +438,17 @@ const addProducts = async (req, res) => {
     }
 
     // ✅ Create product
-    const productFields = [
-      "product_name",
-      "slug",
-      "sku",
-      "barcode",
-      "thumbnail",
-      "gallery_images",
-      "short_description",
-      "long_description",
-      "specifications",
-      "mrp",
-      "selling_price",
-      "cost_price",
-      "tax_percentage",
-      "hsn_code",
-      "stock_quantity",
-      "min_stock_alert",
-      "stock_unit",
-      "is_in_stock",
-      "warehouse_location",
-      "brand_id",
-      "tags",
-      "attributes",
-      "is_featured",
-      "is_new_arrival",
-      "is_best_seller",
-      "product_type",
-      "status",
-      "sort_order",
-      "meta_title",
-      "meta_description",
-      "custom_fields",
-      "shop_id",
-    ];
 
+    const insertQuery = [];
     const insertValues = [];
 
-    for (const field of productFields) {
+    for (const field in product) {
       let value = null;
-      if (field === "thumbnail") {
-        value = thumbnailUpload.secure_url;
-      } else if (field === "gallery_images") {
-        value = JSON.stringify(galleryImages);
+
+      if (field === "variants") {
+        continue;
+      } else if (field === "category_ids") {
+        continue;
       } else if (
         ["tags", "attributes", "specifications", "custom_fields"].includes(
           field
@@ -516,21 +457,20 @@ const addProducts = async (req, res) => {
         value =
           typeof product[field] === "object"
             ? JSON.stringify(product[field])
-            : null;
-      } else if (field === "shop_id") {
-        value = shop_id;
-      } else if (field === "status") {
-        value = product[field]?.toLowerCase() ?? "active";
+            : {};
       } else {
-        value = product[field] ?? null;
+        value = product[field];
       }
+      insertQuery.push(field);
       insertValues.push(value);
     }
+    insertQuery.push("shop_id");
+    insertValues.push(shop_id);
 
-    const productSql = `
-      INSERT INTO products (${productFields.join(", ")})
-      VALUES (${productFields.map(() => "?").join(", ")})
-    `;
+    const productSql = `INSERT INTO products (${insertQuery.join(
+      ", "
+    )}) VALUES (${insertQuery.map(() => "?").join(", ")})`;
+
     const [productResult] = await connection.execute(productSql, insertValues);
     const productId = productResult.insertId;
 
@@ -608,10 +548,16 @@ const addProducts = async (req, res) => {
       for (let i = 0; i < variants.length; i++) {
         const variant = variants[i];
 
-        if (!variant.sku || !variant.base_price) {
+        if (!variant.sku || !variant.base_price || !variant.selling_price) {
           throw new Error(
-            `Each variant must have \`sku\` and \`base_price\` (index ${i})`
+            `Missing required fields: sku, base_price, selling_price for variant ${
+              i + 1
+            }`
           );
+        }
+
+        if (productFiles["variant_thumbnail_1"]?.length === 0) {
+          throw new Error(`Atleast one thumbnail is required`);
         }
 
         const thumbnailFile = productFiles[`variant_thumbnail_${i + 1}`]?.[0];
@@ -622,16 +568,15 @@ const addProducts = async (req, res) => {
             tenantId
           );
           cloudinaryUploads.push(thumbnailUpload.public_id);
-          localFiles.push(thumbnailFile.path);
         }
 
         const variantGalleryUrls = [];
-        const galleryFiles = productFiles[`variant_gallery_images_${i}`] || [];
+        const galleryFiles =
+          productFiles[`variant_gallery_images_${i + 1}`] || [];
 
         for (const g of galleryFiles) {
           const uploaded = await uploadImageToCloudinary(g.path, tenantId);
           cloudinaryUploads.push(uploaded.public_id);
-          localFiles.push(g.path);
           variantGalleryUrls.push(uploaded.secure_url);
         }
 
@@ -704,9 +649,9 @@ const addProducts = async (req, res) => {
       error: error.message,
     });
   } finally {
-    for (const filePath of localFiles) {
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
+    for (const file of productFilesArray) {
+      if (fs.existsSync(file.path)) {
+        fs.unlinkSync(file.path);
       }
     }
     connection.release();
@@ -768,14 +713,12 @@ const updateProduct = async (req, res) => {
   const connection = await pool.getConnection();
   const productFilesArray = req.files || [];
   const productFiles = {};
-  const localFiles = [];
 
   for (const file of productFilesArray) {
     if (!productFiles[file.fieldname]) {
       productFiles[file.fieldname] = [];
     }
     productFiles[file.fieldname].push(file);
-    localFiles.push(file.path);
   }
 
   const cloudinaryUploads = [];
@@ -813,9 +756,6 @@ const updateProduct = async (req, res) => {
       "barcode",
       "short_description",
       "long_description",
-      "mrp",
-      "selling_price",
-      "cost_price",
       "tax_percentage",
       "hsn_code",
       "min_stock_alert",
@@ -833,68 +773,6 @@ const updateProduct = async (req, res) => {
     ];
 
     for (const field of directFields) updateIfPresent(field);
-
-    // 🔁 Update thumbnail if new file is provided
-    if (productFiles.thumbnail?.[0]) {
-      const uploaded = await uploadImageToCloudinary(
-        productFiles.thumbnail[0].path,
-        tenantId
-      );
-      if (!uploaded?.secure_url) {
-        throw new Error("Failed to upload product thumbnail.");
-      }
-
-      cloudinaryUploads.push(uploaded.public_id);
-      updateFields.push("thumbnail = ?");
-      updateValues.push(uploaded.secure_url);
-
-      if (existingProduct.thumbnail) {
-        const publicId = getPublicIdFromUrl(existingProduct.thumbnail);
-        const result = await deleteFromCloudinary(publicId);
-        if (
-          !result?.result ||
-          (result.result !== "ok" && result.result !== "not found")
-        ) {
-          throw new Error("Failed to delete existing product thumbnail.");
-        }
-      }
-    }
-
-    // 🔁 Update gallery images if provided
-    if (productFiles.gallery_images?.length) {
-      const gallery = [];
-
-      for (const file of productFiles.gallery_images) {
-        const uploaded = await uploadImageToCloudinary(file.path, tenantId);
-        if (!uploaded?.secure_url) {
-          throw new Error("Failed to upload product gallery image.");
-        }
-
-        gallery.push(uploaded.secure_url);
-        cloudinaryUploads.push(uploaded.public_id);
-      }
-
-      updateFields.push("gallery_images = ?");
-      updateValues.push(JSON.stringify(gallery));
-
-      if (existingProduct.gallery_images) {
-        const gallery =
-          typeof existingProduct.gallery_images === "string"
-            ? JSON.parse(existingProduct.gallery_images)
-            : existingProduct.gallery_images;
-
-        for (const image of gallery) {
-          const publicId = getPublicIdFromUrl(image);
-          const result = await deleteFromCloudinary(publicId);
-          if (
-            !result?.result ||
-            (result.result !== "ok" && result.result !== "not found")
-          ) {
-            throw new Error("Failed to delete existing product gallery image.");
-          }
-        }
-      }
-    }
 
     // 🔁 Update other fields
     if (updateFields.length) {
@@ -1100,8 +978,8 @@ const updateProduct = async (req, res) => {
       error: error.message,
     });
   } finally {
-    for (const filePath of localFiles) {
-      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    for (const file of productFilesArray) {
+      if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
     }
     connection.release();
   }
@@ -1141,10 +1019,6 @@ const deleteProduct = async (req, res) => {
   if (!productRows.length) {
     return res.status(404).json({ success: false, error: "Product not found" });
   }
-
-  const product = productRows[0];
-  const productImage = product.thumbnail;
-  const gallery_images = product.gallery_images;
 
   const client = await pool.getConnection();
 
@@ -1207,40 +1081,6 @@ const deleteProduct = async (req, res) => {
       }
     }
 
-    // Delete product thumbnail
-    if (productImage) {
-      const public_id = getPublicIdFromUrl(productImage);
-      const result = await deleteFromCloudinary(public_id);
-      if (
-        !result?.result ||
-        (result.result !== "ok" && result.result !== "not found")
-      ) {
-        throw new Error("Failed to delete variant thumbnail.");
-      }
-    }
-
-    // Delete product gallery
-    if (gallery_images) {
-      const images =
-        typeof gallery_images === "string"
-          ? JSON.parse(gallery_images)
-          : gallery_images;
-
-      const public_ids = images.map(getPublicIdFromUrl);
-
-      const deletions = await Promise.all(
-        public_ids.map((id) => deleteFromCloudinary(id))
-      );
-      if (
-        deletions.some(
-          (res) =>
-            !res?.result || (res.result !== "ok" && res.result !== "not found")
-        )
-      ) {
-        throw new Error("Failed to delete product gallery images.");
-      }
-    }
-
     await client.commit();
     return res.status(200).json({
       success: true,
@@ -1281,8 +1121,6 @@ const deleteVariant = async (req, res) => {
       .status(404)
       .json({ success: false, error: "Shop not found for this vendor." });
   }
-
-  const shop_id = shopRows[0].id;
 
   const [variantRows] = await pool.execute(
     "SELECT * FROM product_variants WHERE id = ?",
@@ -1698,38 +1536,52 @@ const getPaginatedproducts = async (req, res) => {
     }
 
     // Step 7: Build final response
-    const data = productRows.map((product) => ({
-      id: product.id,
-      product_name: product.product_name,
-      slug: product.slug,
-      sku: product.sku,
-      thumbnail: product.thumbnail,
-      galleryImages: product.gallery_images,
-      selling_price: product.selling_price,
-      mrp: product.mrp,
-      stock_quantity: product.stock_quantity,
-      min_stock_alert: product.min_stock_alert,
-      stock_unit: product.stock_unit,
-      is_in_stock: product.is_in_stock,
-      brand: product.brand,
-      status: product.status,
-      short_description: product.short_description,
-      long_description: product.long_description,
-      warehouse_location: product.warehouse_location,
-      tags: product.tags,
-      attributes: product.attributes,
-      is_featured: product.is_featured,
-      is_new_arrival: product.is_new_arrival,
-      is_best_seller: product.is_best_seller,
-      product_type: product.product_type,
-      meta_title: product.meta_title,
-      meta_description: product.meta_description,
-      custom_fields: product.custom_fields,
-      created_at: product.created_at,
-      updated_at: product.updated_at,
-      categories: categoryMap[product.id] || [],
-      variants: variantMap[product.id] || [],
-    }));
+    const data = productRows.map((product) => {
+      const variants = variantMap[product.id] || [];
+
+      // Pick the first variant to use for main product values (if exists)
+      const [mainVariant, ...otherVariants] = variants;
+
+      return {
+        id: product.id,
+        product_name: product.product_name,
+        slug: product.slug,
+        sku: product.sku,
+        thumbnail: mainVariant?.thumbnail,
+        gallery_images:
+          typeof mainVariant?.gallery_images === "string"
+            ? JSON.parse(mainVariant.gallery_images)
+            : mainVariant?.gallery_images,
+        selling_price: Number(mainVariant?.selling_price),
+        base_price: Number(mainVariant?.base_price),
+        cost_price: Number(mainVariant?.cost_price),
+        stock: product.stock_quantity,
+        tax: product.tax_percentage,
+        stock_alert_at: product.min_stock_alert,
+        stock_unit: product.stock_unit,
+        is_in_stock: product.is_in_stock,
+        hsn: product.hsn_code,
+        barcode: product.barcode,
+        brand: product.brand,
+        status: product.status,
+        short_description: product.short_description,
+        long_description: product.long_description,
+        warehouse_location: product.warehouse_location,
+        tags: product.tags,
+        attributes: product.attributes,
+        is_featured: product.is_featured,
+        is_new_arrival: product.is_new_arrival,
+        is_best_seller: product.is_best_seller,
+        product_type: product.product_type,
+        meta_title: product.meta_title,
+        meta_description: product.meta_description,
+        custom_fields: product.custom_fields,
+        created_at: product.created_at,
+        updated_at: product.updated_at,
+        categories: categoryMap[product.id] || [],
+        variants: otherVariants, // remaining variants only
+      };
+    });
 
     return res.status(200).json({
       success: true,
@@ -1753,7 +1605,8 @@ const getPaginatedproducts = async (req, res) => {
 };
 
 const addCategory = async (req, res) => {
-  const pool = pools[req.tenantId];
+  const tenantId = req.tenantId;
+  const pool = pools[tenantId];
   const { id: user_id, user_type } = req.user;
 
   if (user_type !== "VENDOR") {
@@ -1830,17 +1683,14 @@ const addCategory = async (req, res) => {
     );
 
     if (image && image !== null) {
-      const uploadResult = await uploadImageToCloudinary(image.path);
+      const uploadResult = await uploadImageToCloudinary(image.path, tenantId);
       if (uploadResult) {
         await pool.execute("UPDATE categories SET image_url = ? WHERE id = ?", [
           uploadResult.secure_url,
           result.insertId,
         ]);
       } else {
-        return res.status(500).json({
-          success: false,
-          message: "Failed to upload image",
-        });
+        throw new Error("Failed to upload image to Cloudinary.");
       }
     }
 
@@ -2017,7 +1867,7 @@ const deleteCategory = async (req, res) => {
     }
 
     if (image !== defaultImageUrl) {
-      const public_id = image.split("/").pop().split(".")[0];
+      const public_id = getPublicIdFromUrl(image);
       await deleteFromCloudinary(public_id);
     }
 

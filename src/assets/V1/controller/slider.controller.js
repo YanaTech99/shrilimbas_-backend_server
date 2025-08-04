@@ -1,10 +1,10 @@
-import pools from "../db/index.js";
+import pools from "../../db/index.js";
 import fs from "fs";
 import {
   uploadImageToCloudinary,
   deleteFromCloudinary,
-} from "../utils/cloudinary.util.js";
-import { sanitizeInput } from "../utils/validation.util.js";
+} from "../../utils/cloudinary.util.js";
+import { sanitizeInput } from "../../utils/validation.util.js";
 
 const addSlider = async (req, res) => {
   const pool = pools[req.tenantId];

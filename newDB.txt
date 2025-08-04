@@ -1,0 +1,594 @@
+CREATE TABLE users (
+  id INT NOT NULL AUTO_INCREMENT UNIQUE,
+  uuid CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+  tenant_id CHAR(36) NOT NULL,
+  user_type ENUM('CUSTOMER','VENDOR','DELIVERY_BOY') NOT NULL DEFAULT 'CUSTOMER',
+
+  -- Auth Fields
+  email VARCHAR(255) UNIQUE,
+  phone VARCHAR(20) UNIQUE,
+
+  -- User Info
+  full_name VARCHAR(255),
+  dob DATE,
+  gender VARCHAR(10),
+
+  -- Security & Verification
+  is_email_verified BOOLEAN DEFAULT FALSE,
+  is_phone_verified BOOLEAN DEFAULT FALSE,
+  is_active BOOLEAN DEFAULT TRUE,
+  is_deleted BOOLEAN DEFAULT FALSE,
+  last_login_at TIMESTAMP NULL DEFAULT NULL,
+
+  -- Timestamps
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE TABLE customers (
+    id INT NOT NULL AUTO_INCREMENT UNIQUE,
+    uuid CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    user_id char(36) not null,
+    name VARCHAR(255),
+    email VARCHAR(255),
+    gender VARCHAR(10),
+    date_of_birth DATE,
+    profile_image_url VARCHAR(512),
+    
+    alternate_phone VARCHAR(20),
+    
+    default_shipping_address_id CHAR(36),
+    default_billing_address_id CHAR(36),
+    
+    loyalty_points INT DEFAULT 0,
+    preferred_language VARCHAR(10) DEFAULT 'en',
+    preferred_currency VARCHAR(10) DEFAULT 'INR',
+    referral_code VARCHAR(20) UNIQUE,
+    referred_by_code VARCHAR(20),
+    
+    notes TEXT,
+    
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    
+    CONSTRAINT fk_customers_user FOREIGN KEY (user_id) REFERENCES users(uuid) ON DELETE CASCADE
+);
+
+CREATE TABLE shops (
+    id INT NOT NULL AUTO_INCREMENT UNIQUE,
+    uuid CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    user_id char(36) not null,
+    name VARCHAR(255) DEFAULT "",
+    description TEXT,
+    logo_url VARCHAR(512),
+    license_number VARCHAR(100),
+    
+    email VARCHAR(255),
+    contact_alternate_phone VARCHAR(20),
+    
+    address_id INT, -- should reference an addresses table
+    is_verified BOOLEAN DEFAULT FALSE,
+    is_featured BOOLEAN DEFAULT FALSE,
+    
+    categories JSON, -- MySQL uses JSON, not JSONB
+    working_hours JSON, -- e.g., {"mon": "9-5", "sun": "closed"}
+    is_open BOOLEAN DEFAULT TRUE,
+    
+    last_login_at TIMESTAMP NULL,
+    is_active BOOLEAN DEFAULT TRUE,
+    is_deleted BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    
+    CONSTRAINT fk_shop_user FOREIGN KEY (user_id) REFERENCES users(uuid) ON DELETE CASCADE
+);
+
+CREATE TABLE shop_bank_accounts (
+  id INT NOT NULL AUTO_INCREMENT UNIQUE,
+	uuid CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+
+  shop_id char(36) NOT NULL,
+  account_holder_name VARCHAR(255) NOT NULL,
+  account_number VARCHAR(50) NOT NULL,
+  bank_name VARCHAR(255) NOT NULL,
+  branch_name VARCHAR(255),
+  ifsc_code VARCHAR(20),
+  swift_code VARCHAR(20),
+  is_primary BOOLEAN DEFAULT TRUE,
+
+  is_active BOOLEAN DEFAULT TRUE,
+    is_deleted BOOLEAN DEFAULT TRUE,
+    created_by INT, -- Optional: references admin/user who created
+    updated_by INT, -- Optional: references admin/user who last updated
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+  FOREIGN KEY (shop_id) REFERENCES shops(uuid) ON DELETE CASCADE
+);
+
+CREATE TABLE delivery_boys (
+  id INT NOT NULL AUTO_INCREMENT UNIQUE,
+    uuid CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    user_id char(36) not null,
+
+  CONSTRAINT fk_delivery_boy_user FOREIGN KEY (user_id) REFERENCES users(uuid) ON DELETE CASCADE,
+
+  name VARCHAR(100),
+  email VARCHAR(255),
+  alternate_phone VARCHAR(20),
+  phone_verified BOOLEAN DEFAULT FALSE,
+  email_verified BOOLEAN DEFAULT FALSE,
+  profile_image_url VARCHAR(512),
+  date_of_birth DATE,
+  gender VARCHAR(10),
+
+  address TEXT,
+  city VARCHAR(100),
+  state VARCHAR(100),
+  country VARCHAR(100),
+  postal_code VARCHAR(20),
+  latitude DECIMAL(10,7),
+  longitude DECIMAL(10,7),
+
+  status ENUM('AVAILABLE','OFFLINE','BLOCKED', 'ON_DELIVERY') DEFAULT 'AVAILABLE', -- AVAILABLE, OFFLINE, BLOCKED, ON_DELIVERY
+
+  last_active_at TIMESTAMP,
+
+  -- Vehicle Info
+  vehicle_type VARCHAR(50),
+  vehicle_number VARCHAR(30),
+  vehicle_model VARCHAR(100),
+  vehicle_color VARCHAR(30),
+  vehicle_insurance_number VARCHAR(100),
+  vehicle_insurance_validity DATE,
+  driving_license_number VARCHAR(50),
+  driving_license_expiry DATE,
+
+  -- Banking Info
+  bank_account_holder_name VARCHAR(255),
+  bank_account_number VARCHAR(50),
+  bank_name VARCHAR(255),
+  bank_branch VARCHAR(255),
+  bank_ifsc_code VARCHAR(20),
+
+  -- Performance
+  total_deliveries INT DEFAULT 0,
+  rating DECIMAL(3,2) DEFAULT 5.00,
+  total_earnings DECIMAL(12,2) DEFAULT 0.00,
+  last_payout_at TIMESTAMP,
+
+  -- Misc
+  notes TEXT,
+  
+  is_active BOOLEAN DEFAULT TRUE,
+  is_deleted BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE TABLE categories (
+    id INT NOT NULL AUTO_INCREMENT UNIQUE,
+    uuid CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+
+    title VARCHAR(255) NOT NULL,
+    slug VARCHAR(255) UNIQUE, -- SEO-friendly URL
+    description TEXT,
+    image_url TEXT,
+
+    parent_id char(36) DEFAULT NULL, -- Self-reference for subcategories
+
+    sort_order INT DEFAULT 0, -- For manual ordering
+
+    meta_title VARCHAR(255),
+    meta_description TEXT,
+
+    is_active BOOLEAN DEFAULT TRUE,
+    is_deleted BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (parent_id) REFERENCES categories(uuid) ON DELETE SET NULL
+);
+
+CREATE TABLE brands (
+    id INT NOT NULL AUTO_INCREMENT UNIQUE,
+    uuid CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    title VARCHAR(255) NOT NULL UNIQUE,
+    slug VARCHAR(255) NOT NULL UNIQUE, -- For SEO-friendly URLs
+    description TEXT,
+    image_url TEXT, -- Could be URL to brand logo or banner
+    sort_order INT DEFAULT 0, -- Useful for ordering in listings
+    meta_title VARCHAR(255) default '', -- SEO
+    meta_description TEXT, -- SEO
+    is_active BOOLEAN DEFAULT TRUE,
+    is_deleted BOOLEAN DEFAULT TRUE,
+    created_by INT, -- Optional: references admin/user who created
+    updated_by INT, -- Optional: references admin/user who last updated
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE TABLE products (
+  id INT NOT NULL AUTO_INCREMENT UNIQUE,
+    uuid CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+
+  product_name VARCHAR(255) NOT NULL,
+  slug VARCHAR(255) UNIQUE,
+  sku VARCHAR(100) UNIQUE NOT NULL,
+  barcode VARCHAR(100) default '',
+
+  thumbnail TEXT,
+  gallery_images JSON,
+  short_description TEXT,
+  long_description TEXT,
+  specifications JSON,
+
+  mrp DECIMAL(10,2) NOT NULL,
+  selling_price DECIMAL(10,2) NOT NULL,
+  cost_price DECIMAL(10,2) default 0,
+  tax_percentage INT default 0,
+  hsn_code VARCHAR(50) default '',
+
+  min_stock_alert INT DEFAULT 0,
+  stock_unit VARCHAR(50) default '',
+  is_in_stock BOOLEAN DEFAULT TRUE,
+  warehouse_location VARCHAR(255) default '',
+
+  brand_id char(36) default '',
+  shop_id char(36) NOT NULL,
+
+  tags JSON,
+  attributes JSON,
+
+  is_featured BOOLEAN DEFAULT FALSE,
+  is_new_arrival BOOLEAN DEFAULT FALSE,
+  is_best_seller BOOLEAN DEFAULT FALSE,
+
+  product_type VARCHAR(50),
+  status VARCHAR(20),
+
+  sort_order INT DEFAULT 0, -- 🔹 Added field for manual sorting
+
+  meta_title VARCHAR(255) default '',
+  meta_description TEXT,
+  custom_fields JSON,
+
+  is_active BOOLEAN DEFAULT TRUE,
+    is_deleted BOOLEAN DEFAULT TRUE,
+    created_by INT, -- Optional: references admin/user who created
+    updated_by INT, -- Optional: references admin/user who last updated
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+  FOREIGN KEY (brand_id) REFERENCES brands(uuid) ON DELETE CASCADE,
+  FOREIGN KEY (shop_id) REFERENCES shops(uuid) ON DELETE CASCADE
+);
+
+CREATE TABLE product_variants (
+  id INT NOT NULL AUTO_INCREMENT UNIQUE,
+    uuid CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+
+  product_id char(36) NOT NULL,
+  sku VARCHAR(100) UNIQUE,
+  barcode VARCHAR(100),
+
+  color VARCHAR(50),
+  size VARCHAR(20),
+  material VARCHAR(100), -- optional variant dimension
+  thumbnail TEXT,
+  gallery_images JSON, -- holds array of image URLs
+
+  base_price DECIMAL(10,2) NOT NULL,
+  selling_price DECIMAL(10,2),         -- optional discount price
+  cost_price DECIMAL(10,2),            -- internal for reporting
+  stock INT NOT NULL DEFAULT 0,
+  min_stock_alert INT DEFAULT 5,        -- alert level for low stock
+
+ is_active BOOLEAN DEFAULT TRUE,
+    is_deleted BOOLEAN DEFAULT TRUE,
+    created_by INT, -- Optional: references admin/user who created
+    updated_by INT, -- Optional: references admin/user who last updated
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+  FOREIGN KEY (product_id) REFERENCES products(uuid) ON DELETE CASCADE
+);
+
+CREATE TABLE product_categories (
+  id INT NOT NULL AUTO_INCREMENT UNIQUE,
+    uuid CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+
+  product_id char(36) NOT NULL,
+  category_id char(36) NOT NULL,
+  
+  sort_order INT DEFAULT 0,         -- manual ordering within category if needed
+
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+  FOREIGN KEY (product_id) REFERENCES products(uuid) ON DELETE CASCADE,
+  FOREIGN KEY (category_id) REFERENCES categories(uuid) ON DELETE CASCADE,
+
+  UNIQUE KEY unique_product_category (product_id, category_id)
+);
+
+CREATE TABLE sliders (
+  id INT NOT NULL AUTO_INCREMENT UNIQUE,
+    uuid CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+	shop_id char(36) not null,
+  name VARCHAR(100) NOT NULL,                      -- Identifier (e.g., 'homepage_deals')
+  position ENUM(
+    'homepage_top',
+    'homepage_middle',
+    'homepage_bottom',
+    'category_top',
+    'category_sidebar',
+    'product_page_top',
+    'cart_page',
+    'checkout_page',
+    'popup',
+    'offer_zone',
+    'search_page',
+    'global_footer'
+  ) NOT NULL,
+
+  type ENUM('single', 'carousel') DEFAULT 'single',
+  autoplay BOOLEAN DEFAULT FALSE,
+
+  start_date DATE,
+  end_date DATE,
+
+  sort_order INT DEFAULT 0,
+
+  is_active BOOLEAN DEFAULT TRUE,
+    is_deleted BOOLEAN DEFAULT TRUE,
+    created_by INT, -- Optional: references admin/user who created
+    updated_by INT, -- Optional: references admin/user who last updated
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    
+  FOREIGN KEY (shop_id) REFERENCES shops(uuid) ON DELETE CASCADE
+);
+
+CREATE TABLE slider_items (
+  id INT NOT NULL AUTO_INCREMENT UNIQUE,
+	uuid CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+
+  slider_id char(36) NOT NULL,
+  title VARCHAR(255),
+  subtitle VARCHAR(255),
+  image_url TEXT NOT NULL,
+
+  link_type ENUM('product', 'category', 'url', 'none') DEFAULT 'none',
+  link_reference_id INT,
+  link_url TEXT,
+
+  sort_order INT DEFAULT 0,
+
+  is_active BOOLEAN DEFAULT TRUE,
+    is_deleted BOOLEAN DEFAULT TRUE,
+    created_by INT, -- Optional: references admin/user who created
+    updated_by INT, -- Optional: references admin/user who last updated
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+  FOREIGN KEY (slider_id) REFERENCES sliders(uuid) ON DELETE CASCADE
+);
+
+CREATE TABLE addresses (
+    id INT NOT NULL AUTO_INCREMENT UNIQUE,
+	uuid CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+
+    -- Foreign keys (only one of them should be NOT NULL per row)
+    customer_id char(36) NULL,
+    shop_id char(36) NULL,
+
+    -- Address details
+    address_line1 VARCHAR(255) NOT NULL,
+    address_line2 VARCHAR(255) DEFAULT '',
+    landmark VARCHAR(255) DEFAULT '',
+    city VARCHAR(100) NOT NULL,
+    state VARCHAR(100) NOT NULL,
+    postal_code VARCHAR(20) NOT NULL,
+    country VARCHAR(100) NOT NULL,
+
+    -- Geo-coordinates for mapping / delivery optimization
+    latitude DECIMAL(10,8) DEFAULT NULL,
+    longitude DECIMAL(11,8) DEFAULT NULL,
+
+    -- Metadata
+    address_type ENUM('billing', 'shipping', 'both') DEFAULT 'shipping',
+    
+    is_active BOOLEAN DEFAULT TRUE,
+    is_deleted BOOLEAN DEFAULT TRUE,
+    created_by INT, -- Optional: references admin/user who created
+    updated_by INT, -- Optional: references admin/user who last updated
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    -- Constraints
+    CONSTRAINT fk_customer FOREIGN KEY (customer_id) REFERENCES customers(uuid) ON DELETE CASCADE,
+    CONSTRAINT fk_shop FOREIGN KEY (shop_id) REFERENCES shops(uuid) ON DELETE CASCADE,
+    CONSTRAINT chk_customer_or_shop CHECK (
+        (customer_id IS NOT NULL AND shop_id IS NULL) OR
+        (customer_id IS NULL AND shop_id IS NOT NULL)
+    )
+);
+
+CREATE TABLE cart_items (
+  id INT NOT NULL AUTO_INCREMENT UNIQUE,
+	uuid CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+
+  customer_id CHAR(36) NOT NULL,
+  product_id char(36) NOT NULL,
+  product_variant_id char(36),
+  shop_id char(36) NOT NULL,
+
+  quantity INT NOT NULL CHECK (quantity > 0),
+
+  price_per_unit DECIMAL(12,2) NOT NULL,
+  discount_per_unit DECIMAL(12,2) DEFAULT 0,
+  tax_per_unit DECIMAL(12,2) DEFAULT 0,
+  
+  total_price DECIMAL(12,2) GENERATED ALWAYS AS 
+    ((price_per_unit - discount_per_unit + tax_per_unit) * quantity) STORED,
+
+  product_snapshot JSON, -- Product info at time added to cart
+
+  is_saved_for_later BOOLEAN DEFAULT FALSE,
+  is_selected BOOLEAN DEFAULT TRUE, -- If selected for checkout
+
+    is_deleted BOOLEAN DEFAULT TRUE,
+    created_by INT, -- Optional: references admin/user who created
+    updated_by INT, -- Optional: references admin/user who last updated
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+  CONSTRAINT fk_cart_customer FOREIGN KEY (customer_id) REFERENCES customers(uuid) ON DELETE CASCADE,
+  CONSTRAINT fk_cart_product FOREIGN KEY (product_id) REFERENCES products(uuid) ON DELETE RESTRICT,
+  CONSTRAINT fk_cart_variant FOREIGN KEY (product_variant_id) REFERENCES product_variants(uuid) ON DELETE SET NULL,
+  CONSTRAINT fk_cart_shop FOREIGN KEY (shop_id) REFERENCES shops(uuid) ON DELETE CASCADE,
+
+  UNIQUE KEY uq_cart_unique (customer_id, product_id, product_variant_id)
+);
+
+CREATE TABLE orders (
+  id INT NOT NULL AUTO_INCREMENT UNIQUE,
+	uuid CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+  order_number VARCHAR(50) UNIQUE NOT NULL,
+  invoice_url varchar(512) default '',
+
+  user_id CHAR(36) NOT NULL,
+  shop_id char(36) NOT NULL,
+  delivery_boy_id char(36) default '',
+
+  order_status ENUM('pending','shipped','delivered', 'cancelled') DEFAULT 'pending', -- e.g., pending, shipped, delivered, cancelled
+  order_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  delivery_date TIMESTAMP,
+
+  delivery_window JSON, -- Use JSON instead of JSONB in MySQL
+  delivery_address TEXT NOT NULL,
+  delivery_city VARCHAR(100),
+  delivery_state VARCHAR(100),
+  delivery_country VARCHAR(100),
+  delivery_postal_code VARCHAR(20),
+  delivery_latitude DECIMAL(10,7),
+  delivery_longitude DECIMAL(10,7),
+  delivery_instructions TEXT,
+
+  payment_method VARCHAR(50), -- e.g., COD, Razorpay, Stripe
+  payment_status VARCHAR(50) DEFAULT 'unpaid',
+  payment_id VARCHAR(255),
+  payment_metadata JSON,
+
+  sub_total DECIMAL(12,2),
+  discount_amount DECIMAL(12,2) DEFAULT 0,
+  tax_amount DECIMAL(12,2) DEFAULT 0,
+  shipping_fee DECIMAL(12,2) DEFAULT 0,
+  total_amount DECIMAL(12,2) GENERATED ALWAYS AS 
+    (sub_total - discount_amount + tax_amount + shipping_fee) STORED,
+
+  coupon_code VARCHAR(50),
+  coupon_discount DECIMAL(12,2) DEFAULT 0,
+
+  currency VARCHAR(10) DEFAULT 'INR',
+  notes TEXT,
+  status_history JSON, -- store as array of status logs
+
+  is_deleted BOOLEAN DEFAULT false,
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+  CONSTRAINT fk_order_user FOREIGN KEY (user_id) REFERENCES users(uuid) ON DELETE CASCADE,
+  CONSTRAINT fk_order_shop FOREIGN KEY (shop_id) REFERENCES shops(uuid) ON DELETE CASCADE,
+  CONSTRAINT fk_order_delivery_boy FOREIGN KEY (delivery_boy_id) REFERENCES delivery_boys(uuid) ON DELETE SET NULL
+);
+
+CREATE TABLE order_items (
+  id INT NOT NULL AUTO_INCREMENT UNIQUE,
+	uuid CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+
+  order_id char(36) NOT NULL,
+  product_id char(36) NOT NULL,
+  product_variant_id char(36) default '',
+
+  quantity INT NOT NULL,
+
+  price_per_unit DECIMAL(12,2) NOT NULL,
+  discount_per_unit DECIMAL(12,2) DEFAULT 0,
+  tax_per_unit DECIMAL(12,2) DEFAULT 0,
+
+  total_price DECIMAL(12,2) GENERATED ALWAYS AS 
+    ((price_per_unit - discount_per_unit + tax_per_unit) * quantity) STORED,
+
+  product_snapshot JSON, -- store product info at time of order
+
+  notes TEXT,
+
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+  CONSTRAINT fk_order_item_order FOREIGN KEY (order_id) REFERENCES orders(uuid) ON DELETE CASCADE,
+  CONSTRAINT fk_order_item_product FOREIGN KEY (product_id) REFERENCES products(uuid) ON DELETE RESTRICT,
+  CONSTRAINT fk_order_item_variant FOREIGN KEY (product_variant_id) REFERENCES product_variants(uuid) ON DELETE SET NULL
+);
+
+CREATE TABLE otp_requests (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+
+    phone_number VARCHAR(20) NOT NULL unique,
+    otp_code VARCHAR(100) NOT NULL,
+    tenant_id varchar(36) not null,
+
+    user_agent TEXT,
+    browser_name VARCHAR(50),
+    browser_version VARCHAR(20),
+    os_name VARCHAR(50),
+    os_version VARCHAR(20),
+    device_type VARCHAR(20),
+
+    ip_address VARCHAR(45), -- supports both IPv4 and IPv6
+
+    is_used BOOLEAN DEFAULT FALSE,
+    is_verified BOOLEAN DEFAULT FALSE,
+    attempt_count INT DEFAULT 0,
+
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    expires_at DATETIME NOT NULL,
+
+    INDEX idx_phone_code (phone_number, otp_code),
+    INDEX idx_created_at (created_at)
+);
+
+CREATE TABLE transactions (
+    id INT NOT NULL AUTO_INCREMENT UNIQUE,
+    uuid CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+
+        provider VARCHAR(50) NOT NULL,               -- e.g., 'razorpay', 'stripe'
+    transaction_id VARCHAR(150) NOT NULL,        -- Razorpay payment_id / Stripe charge_id
+    payment_order_id VARCHAR(150),                       -- Gateway-specific order ID
+    receipt VARCHAR(100),                        -- Optional internal receipt or ref
+
+    amount INT NOT NULL,                         -- In smallest unit (paise, cents)
+    currency VARCHAR(10) DEFAULT 'INR',
+
+    status ENUM('created', 'processing', 'paid', 'failed', 'refunded') DEFAULT 'created',
+    payment_method VARCHAR(50),                          -- card, upi, netbanking, etc.
+
+    order_id char(36) default '',
+    user_id char(36) not null,                                -- Optional FK to your users table
+    email VARCHAR(100) default '',
+    contact VARCHAR(20) not null,
+
+    response_payload JSON,      
+
+    paid_at DATETIME,
+    refunded_at DATETIME,
+
+    metadata JSON,
+
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (user_id) REFERENCES users(uuid),
+    CONSTRAINT fk_transaction_order FOREIGN KEY (order_id) REFERENCES orders(uuid) ON DELETE SET NULL
+)

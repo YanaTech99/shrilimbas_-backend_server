@@ -1,11 +1,14 @@
-import pools from "../db/index.js";
-import { sanitizeInput, validateUserInput } from "../utils/validation.util.js";
+import pools from "../../db/index.js";
+import {
+  sanitizeInput,
+  validateUserInput,
+} from "../../utils/validation.util.js";
 import {
   uploadImageToCloudinary,
   deleteFromCloudinary,
-} from "../utils/cloudinary.util.js";
+} from "../../utils/cloudinary.util.js";
 import fs from "fs";
-import { defaultProfileUrl } from "../../constants.js";
+import { defaultProfileUrl, profileImageFolder } from "../../../constants.js";
 
 const updateProfile = async (req, res) => {
   const tenantId = req.tenantId;
@@ -140,7 +143,8 @@ const updateProfile = async (req, res) => {
 
       const { secure_url, public_id } = await uploadImageToCloudinary(
         profileImage.path,
-        tenantId
+        tenantId,
+        profileImageFolder
       );
 
       uploadedImage = public_id;

@@ -1,10 +1,16 @@
-import pools from "../db/index.js";
-import { generateAccessToken, verifyAccessToken } from "../utils/jwt.util.js";
-import { sanitizeInput, validateUserInput } from "../utils/validation.util.js";
-import { generateOTP } from "../utils/generateOTP.util.js";
+import pools from "../../db/index.js";
+import {
+  generateAccessToken,
+  verifyAccessToken,
+} from "../../utils/jwt.util.js";
+import {
+  sanitizeInput,
+  validateUserInput,
+} from "../../utils/validation.util.js";
+import { generateOTP } from "../../utils/generateOTP.util.js";
 import bcrypt from "bcrypt";
 import { UAParser } from "ua-parser-js";
-import { defaultProfileUrl } from "../../constants.js";
+import { defaultProfileUrl } from "../../../constants.js";
 
 const sendOTP = async (req, res) => {
   const tenantId = req.tenantId;
@@ -243,12 +249,10 @@ const loginViaPhone = async (req, res) => {
       }
 
       const [profileInsertResult] = await client.execute(
-        `INSERT INTO ${profileTable} (${
-          user_type === "CUSTOMER" ? "id" : "user_id"
-        }, ${
+        `INSERT INTO ${profileTable} (user_id, ${
           user_type === "VENDOR" ? "logo_url" : "profile_image_url"
         }) VALUES (?, ?)`,
-        [newUserRows[0].id, defaultProfileUrl]
+        [newUserRows[0].uuid, defaultProfileUrl]
       );
 
       if (profileInsertResult.affectedRows === 0) {
@@ -260,10 +264,8 @@ const loginViaPhone = async (req, res) => {
       }
 
       const [profileRows] = await client.execute(
-        `SELECT * FROM ${profileTable} WHERE ${
-          user_type === "CUSTOMER" ? "id" : "user_id"
-        } = ?`,
-        [newUserRows[0].id]
+        `SELECT * FROM ${profileTable} WHERE user_id = ?`,
+        [newUserRows[0].uuid]
       );
 
       //insert into address table
@@ -271,7 +273,7 @@ const loginViaPhone = async (req, res) => {
         let adressFor = user_type === "VENDOR" ? "shop_id" : "customer_id";
         const [addressInsertResult] = await client.execute(
           `INSERT INTO addresses (address_line1, city, state, postal_code, country, ${adressFor}) VALUES ('main address', 'city', 'state', '12345', 'country', ?)`,
-          [profileRows[0].id]
+          [profileRows[0].uuid]
         );
 
         if (addressInsertResult.affectedRows === 0) {

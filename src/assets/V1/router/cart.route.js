@@ -4,7 +4,7 @@ import {
   deleteFromCart,
   getCart,
 } from "../controller/cart.controller.js";
-import { authenticateToken } from "../middleware/auth.middleware.js";
+import { authenticateToken } from "../../middleware/auth.middleware.js";
 
 const router = Router();
 

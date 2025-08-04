@@ -1,7 +1,6 @@
 import { Router } from "express";
 import { loginViaPhone, sendOTP } from "../controller/auth.controller.js";
-import { verifyOTP } from "../middleware/otpVerification.middleware.js";
-import { authenticateToken } from "../middleware/auth.middleware.js";
+import { verifyOTP } from "../../middleware/otpVerification.middleware.js";
 
 const router = Router();
 

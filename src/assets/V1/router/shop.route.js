@@ -15,8 +15,8 @@ import {
   updateProduct,
   updateShop,
 } from "../controller/shop.controller.js";
-import { authenticateToken } from "../middleware/auth.middleware.js";
-import { upload } from "../middleware/multer.middleware.js";
+import { authenticateToken } from "../../middleware/auth.middleware.js";
+import { upload } from "../../middleware/multer.middleware.js";
 
 const router = Router();
 

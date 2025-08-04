@@ -1,4 +1,4 @@
-import pools from "../db/index.js";
+import pools from "../../db/index.js";
 
 const addToCart = async (req, res) => {
   const pool = pools[req.tenantId];

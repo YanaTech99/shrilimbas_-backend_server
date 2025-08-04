@@ -3,3 +3,7 @@ export const defaultImageUrl =
 
 export const defaultProfileUrl =
   "https://res.cloudinary.com/duh128pmo/image/upload/v1753526688/shrilimbas/ls2kyhyairbje8hmbgxs.jpg";
+
+export const profileImageFolder = "profileImages";
+export const productImageFolder = "products";
+export const bannersFolder = "banners";

@@ -1,4 +1,4 @@
-import pools from "../db/index.js";
+import pools from "../../db/index.js";
 
 const getCartData = async (customer_id, tenantID) => {
   const pool = pools[tenantID];
@@ -138,7 +138,6 @@ const modifyProductResponse = async (data, tenantId) => {
       const discount = parseFloat(product.discount || 0);
 
       const total_price = price - discount + tax;
-      console.log(total_price);
 
       return {
         ...product,
