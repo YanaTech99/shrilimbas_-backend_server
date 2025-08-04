@@ -9,6 +9,7 @@ import {
 } from "../../utils/cloudinary.util.js";
 import fs from "fs";
 import { defaultProfileUrl, profileImageFolder } from "../../../constants.js";
+import { getPublicIdFromUrl } from "../../utils/extractPublicID.util.js";
 
 const updateProfile = async (req, res) => {
   const tenantId = req.tenantId;
@@ -132,12 +133,7 @@ const updateProfile = async (req, res) => {
         customer_id[0].profile_image_url !== "" &&
         customer_id[0].profile_image_url !== defaultProfileUrl
       ) {
-        const urlArray = customer_id[0].profile_image_url.split("/");
-        const public_id =
-          urlArray[urlArray.length - 2] +
-          "/" +
-          urlArray[urlArray.length - 1].split(".")[0];
-
+        const public_id = getPublicIdFromUrl(customer_id[0].profile_image_url);
         await deleteFromCloudinary(public_id);
       }
 

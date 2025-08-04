@@ -7,3 +7,4 @@ export const defaultProfileUrl =
 export const profileImageFolder = "profileImages";
 export const productImageFolder = "products";
 export const bannersFolder = "banners";
+export const categoryImageFolder = "categories";
