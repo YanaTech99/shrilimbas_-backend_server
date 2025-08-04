@@ -7,7 +7,7 @@ dotenv.config({
   path: "./.env",
 });
 
-const PORT = process.env.PORT;
+const PORT = process.env.PORT || 5000;
 
 Object.values(pools).forEach((pool) => {
   pool.getConnection((err, connection) => {
