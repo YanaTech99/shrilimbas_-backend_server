@@ -131,7 +131,9 @@ const modifyProductResponse = async (data, tenantId) => {
         `SELECT * FROM product_variants WHERE product_id = ?`,
         [product_id]
       );
-      product.variants = variants;
+
+      product.thumbnail = variants[0]?.thumbnail || "";
+      product.gallery_images = variants[0]?.gallery_images || [];
 
       const price = parseFloat(product.selling_price) || 0;
       const tax = parseFloat(product.tax_percentage || 0);
