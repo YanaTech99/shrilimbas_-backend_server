@@ -133,7 +133,14 @@ const modifyProductResponse = async (data, tenantId) => {
       );
 
       product.thumbnail = variants[0]?.thumbnail || "";
-      product.gallery_images = variants[0]?.gallery_images || [];
+      if (variants[0].gallery_images) {
+        product.gallery_images =
+          typeof variants[0].gallery_images === "string"
+            ? JSON.parse(variants[0].gallery_images)
+            : variants[0].gallery_images;
+      } else {
+        product.gallery_images = [];
+      }
 
       const price = parseFloat(product.selling_price) || 0;
       const tax = parseFloat(product.tax_percentage || 0);
