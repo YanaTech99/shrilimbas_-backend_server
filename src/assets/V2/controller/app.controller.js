@@ -38,17 +38,17 @@ const getCartData = async (customer_id, tenantID) => {
         return {
           id: product.id,
           product_name: product.product_name,
-          thumbnail: product.thumbnail,
+          thumbnail: variants[0]?.thumbnail,
           short_description: product.short_description,
           quantity: item.quantity,
-          mrp: product.mrp,
+          mrp: variants[0]?.selling_price,
           price_per_unit: item.price_per_unit,
           discount_per_unit: item.discount_per_unit,
           tax_per_unit: item.tax_per_unit,
           sku: item.sku,
           product_snapshot: item.product_snapshot,
           variants,
-          finalAmmount: product.selling_price,
+          finalAmmount: variants[0]?.selling_price,
         };
       })
     );
@@ -159,9 +159,10 @@ const getAppData = async (req, res) => {
   const client = await pool.getConnection();
   let customer_id = null;
   if (userId) {
-    customer_id = await client.query(`SELECT id FROM customers WHERE id = ?`, [
-      userId,
-    ]);
+    customer_id = await client.query(
+      `SELECT id FROM customers WHERE user_id = ?`,
+      [userId]
+    );
 
     if (!customer_id || customer_id.length === 0) {
       return res.status(404).json({
