@@ -5,9 +5,11 @@ import {
   deleteFromCloudinary,
 } from "../../utils/cloudinary.util.js";
 import { sanitizeInput } from "../../utils/validation.util.js";
+import { bannerImageFolder } from "../../../constants.js";
 
 const addSlider = async (req, res) => {
-  const pool = pools[req.tenantId];
+  const tenantId = req.tenantId;
+  const pool = pools[tenantId];
   const { id: userId, user_type } = req.user;
   if (user_type !== "VENDOR") {
     return res.status(403).json({
@@ -37,11 +39,9 @@ const addSlider = async (req, res) => {
       position,
       type,
       autoplay,
-      status,
-      is_visible,
+      status = true,
       start_date,
       end_date,
-      sort_order,
       items = [],
     } = sliderData;
 
@@ -54,21 +54,26 @@ const addSlider = async (req, res) => {
 
     await connection.beginTransaction();
 
+    // get max sort order for the slider
+    const [sortOrder] = await pool.execute(
+      "SELECT IFNULL(MAX(sort_order), 0) + 1 AS sort_order FROM sliders WHERE shop_id = ?",
+      [shopId[0].id]
+    );
+
     // Insert into sliders table
     const [sliderResult] = await connection.execute(
       `INSERT INTO sliders
-        (name, position, type, autoplay, status, is_visible, start_date, end_date, sort_order, shop_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (name, position, type, autoplay, is_active, start_date, end_date, sort_order, shop_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         name,
         position,
         type || "single",
         autoplay || 0,
-        status || "active",
-        is_visible ?? 0,
+        status,
         start_date || new Date(),
         end_date || null,
-        sort_order || 0,
+        sortOrder[0].sort_order || 1,
         shopId[0].id,
       ]
     );
@@ -95,9 +100,19 @@ const addSlider = async (req, res) => {
 
       const imagePath = image.path;
 
-      const cloudinaryResult = await uploadImageToCloudinary(imagePath);
+      const cloudinaryResult = await uploadImageToCloudinary(
+        imagePath,
+        tenantId,
+        bannerImageFolder
+      );
       const image_url = cloudinaryResult.secure_url;
       uploadedImages.push(cloudinaryResult.public_id);
+
+      // max of sort order for slider items
+      const [sortOrder] = await pool.execute(
+        "SELECT IFNULL(MAX(sort_order), 0) + 1 AS sort_order FROM slider_items WHERE slider_id = ?",
+        [sliderId]
+      );
 
       await connection.execute(
         `INSERT INTO slider_items
@@ -111,7 +126,7 @@ const addSlider = async (req, res) => {
           item.link_type || "none",
           item.link_reference_id || null,
           item.link_url || null,
-          item.sort_order || 0,
+          sortOrder[0].sort_order || 1,
           item.is_active ?? true,
         ]
       );
@@ -232,7 +247,8 @@ const getSlider = async (req, res) => {
     });
   }
 
-  const modifiedInput = sanitizeInput(req.query);
+  const modifiedInput =
+    Object.entries(req.query).length !== 0 ? sanitizeInput(req.query) : {};
   const filters = modifiedInput;
 
   const { position, type, scheduled_only, is_active } = filters;
@@ -255,27 +271,23 @@ const getSlider = async (req, res) => {
     whereClause.push(`is_active = '${is_active}'`);
   }
 
-  if (whereClause.length > 0) {
-    whereClause.push(`shop_id = '${shop_id[0].id}'`);
-  }
+  whereClause.push(`shop_id = '${shopId[0].id}'`);
 
-  if (whereClause.length > 0) {
-    const whereClauseString = whereClause.join(" AND ");
-    const [result] = await pool.query(
-      `SELECT * FROM sliders WHERE ${whereClauseString}`
-    );
-    if (result.length === 0) {
-      return res.status(404).json({
-        success: false,
-        error: "Slider not found",
-      });
-    } else {
-      return res.status(200).json({
-        success: true,
-        message: "Slider retrieved successfully",
-        data: result,
-      });
-    }
+  const whereClauseString = whereClause.join(" AND ");
+  const [result] = await pool.query(
+    `SELECT * FROM sliders WHERE ${whereClauseString}`
+  );
+  if (result.length === 0) {
+    return res.status(404).json({
+      success: false,
+      error: "Slider not found",
+    });
+  } else {
+    return res.status(200).json({
+      success: true,
+      message: "Slider retrieved successfully",
+      data: result,
+    });
   }
 };
 

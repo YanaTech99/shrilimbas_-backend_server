@@ -7,7 +7,7 @@ const getPaginatedCategories = async (req, res) => {
     const {
       page = 1,
       limit = 10,
-      status = "active",
+      status = true,
       parent_id,
       search,
       sort_by = "sort_order",
@@ -20,7 +20,7 @@ const getPaginatedCategories = async (req, res) => {
 
     // Filters
     if (status) {
-      whereClauses.push("status = ?");
+      whereClauses.push("is_active = ?");
       values.push(status);
     }
 
@@ -81,7 +81,7 @@ const getPaginatedBrands = async (req, res) => {
     const {
       page = 1,
       limit = 10,
-      status = "active",
+      status = true,
       title,
       search,
       sort_by = "sort_order",
@@ -94,7 +94,7 @@ const getPaginatedBrands = async (req, res) => {
 
     // Filters
     if (status) {
-      whereClauses.push("status = ?");
+      whereClauses.push("is_active = ?");
       values.push(status);
     }
 
@@ -155,8 +155,9 @@ const getPaginatedProducts = async (req, res) => {
   const offset = (parseInt(page) - 1) * parseInt(limit);
   const filters = [
     "p.deleted_at IS NULL",
-    "p.status = 'active'",
+    "p.is_active = TRUE",
     "p.is_in_stock = TRUE",
+    "p.is_deleted = FALSE",
   ];
   const values = [];
 
@@ -222,8 +223,7 @@ const getPaginatedProducts = async (req, res) => {
        FROM product_variants
        WHERE product_id IN (${productIds.map(() => "?").join(",")})
          AND is_deleted = FALSE
-         AND is_visible = TRUE
-         AND is_available = TRUE`,
+         AND is_active = TRUE`,
       productIds
     );
 
@@ -238,13 +238,7 @@ const getPaginatedProducts = async (req, res) => {
 
     // Assemble response
     const response = products.map((product) => {
-      const fields = [
-        "specifications",
-        "tags",
-        "attributes",
-        "custom_fields",
-        "gallery_images",
-      ];
+      const fields = ["specifications", "tags", "attributes", "custom_fields"];
 
       for (const field of fields) {
         if (product[field]) {

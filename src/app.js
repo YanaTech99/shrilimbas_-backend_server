@@ -67,7 +67,7 @@ import shopRoutesV2 from "./assets/V2/router/shop.route.js";
 app.use("/api/v2/auth", multiTenantMiddleware, authRoutesV2);
 app.use("/api/v2/app", multiTenantMiddleware, appRoutesV2);
 app.use("/api/v2/shop", multiTenantMiddleware, shopRoutesV2);
-app.use("/api/v2/slider", sliderRoutesV2);
+app.use("/api/v2/slider", multiTenantMiddleware, sliderRoutesV2);
 app.use("/api/v2/products", multiTenantMiddleware, productRoutesV2);
 app.use("/api/v2/orders", multiTenantMiddleware, orderRoutesV2);
 app.use("/api/v2/cart", multiTenantMiddleware, cartRoutesV2);

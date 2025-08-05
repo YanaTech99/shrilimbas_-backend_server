@@ -8,3 +8,4 @@ export const profileImageFolder = "profileImages";
 export const productImageFolder = "products";
 export const bannersFolder = "banners";
 export const categoryImageFolder = "categories";
+export const bannerImageFolder = "banners";

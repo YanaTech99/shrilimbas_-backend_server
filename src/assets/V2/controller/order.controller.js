@@ -5,10 +5,11 @@ import fs from "fs";
 import crypto from "crypto";
 
 const placeOrder = async (req, res) => {
-  const pool = pools[req.tenantId];
+  const tenantId = req.tenantId;
+  const pool = pools[tenantId];
   const { id: user_id, user_type } = req.user;
   const [customer_id] = await pool.query(
-    `SELECT id FROM customers WHERE id = ?`,
+    `SELECT id FROM customers WHERE user_id = ?`,
     [user_id]
   );
 
@@ -52,6 +53,14 @@ const placeOrder = async (req, res) => {
     let shop_id = null;
 
     for (const item of items) {
+      if (!item.product_id || !item.product_variant_id || !item.quantity) {
+        await connection.rollback();
+        return res.status(400).json({
+          success: false,
+          error: "Invalid item data",
+        });
+      }
+
       const [productRow] = await connection.execute(
         `SELECT 
           p.*, 
@@ -69,9 +78,9 @@ const placeOrder = async (req, res) => {
           pv.stock AS variant_stock
         FROM products p
         LEFT JOIN product_variants pv ON p.id = pv.product_id
-        WHERE p.id = ? AND (pv.id IS NULL OR pv.id = ?)
+        WHERE p.id = ? AND pv.id = ?
         FOR UPDATE`,
-        [item.product_id, item.product_variant_id || null]
+        [item.product_id, item.product_variant_id]
       );
 
       if (productRow.length === 0) {
@@ -85,8 +94,11 @@ const placeOrder = async (req, res) => {
       const product = productRow[0];
       shop_id = product.shop_id;
 
-      const availableStock = product.stock ?? product.stock_quantity;
-      if (availableStock < item.quantity) {
+      const availableStock = product.stock_quantity;
+      if (
+        availableStock < item.quantity &&
+        product.variant_stock < item.quantity
+      ) {
         await connection.rollback();
         return res.status(400).json({
           success: false,
@@ -94,7 +106,7 @@ const placeOrder = async (req, res) => {
         });
       }
 
-      const price = parseFloat(product.selling_price);
+      const price = parseFloat(product.variant_selling_price);
       const tax = parseFloat(product.tax_percentage || 0);
       const discount = parseFloat(product.discount || 0);
 
@@ -122,10 +134,7 @@ const placeOrder = async (req, res) => {
                 typeof product.variant_gallery_images === "string"
                   ? JSON.parse(product.variant_gallery_images)
                   : [],
-              base_price: parseFloat(product.variant_base_price),
               selling_price: parseFloat(product.variant_selling_price),
-              cost_price: parseFloat(product.variant_cost_price),
-              stock: parseInt(product.variant_stock),
             })
           : null,
       });
@@ -153,7 +162,7 @@ const placeOrder = async (req, res) => {
 
     const [orderResult] = await connection.execute(
       `INSERT INTO orders (
-        order_number, customer_id, shop_id, delivery_address, delivery_city,
+        order_number, user_id, shop_id, delivery_address, delivery_city,
         delivery_state, delivery_country, delivery_postal_code, delivery_latitude, delivery_longitude,
         delivery_instructions, payment_method, payment_status, sub_total,
         discount_amount, tax_amount, shipping_fee, coupon_code, coupon_discount,
@@ -161,7 +170,7 @@ const placeOrder = async (req, res) => {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unpaid', ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         order_number,
-        customer_id[0].id,
+        user_id,
         shop_id,
         delivery_address || "address",
         delivery_city || "",
@@ -190,9 +199,8 @@ const placeOrder = async (req, res) => {
       await connection.execute(
         `INSERT INTO order_items (
           order_id, product_id, product_variant_id, quantity,
-          price_per_unit, discount_per_unit, tax_per_unit,
-          sku, product_snapshot
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          price_per_unit, discount_per_unit, tax_per_unit, product_snapshot
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           orderId,
           item.product_id,
@@ -201,7 +209,6 @@ const placeOrder = async (req, res) => {
           item.price_per_unit,
           item.discount_per_unit,
           item.tax_per_unit,
-          item.sku,
           item.product_snapshot,
         ]
       );
@@ -239,17 +246,12 @@ const placeOrder = async (req, res) => {
     await connection.commit();
 
     // Get full customer details (optional additional fields)
-    const [userDetails] = await pool.query(
-      `SELECT full_name, email, phone FROM users WHERE id = ?`,
-      [user_id]
-    );
 
     const [customerDetails] = await pool.query(
-      `SELECT alternate_phone FROM customers WHERE id = ?`,
+      `SELECT name, email, alternate_phone FROM customers WHERE id = ?`,
       [user_id]
     );
 
-    const user = userDetails[0] || {};
     const customer = customerDetails[0] || {};
     const now = new Date();
 
@@ -262,9 +264,9 @@ const placeOrder = async (req, res) => {
       payment_method,
       payment_status: "unpaid",
       customer: {
-        name: user.full_name || "Customer",
-        email: user.email || "",
-        phone: user.phone || "",
+        name: customer.name || "Customer",
+        email: customer.email || "",
+        phone: customer.phone || "",
         alternate_phone: customer.alternate_phone || "",
       },
       delivery_address: {
@@ -340,7 +342,7 @@ const placeOrder = async (req, res) => {
         pdfBuffer,
         fileName,
         relativePath,
-        req.tenantId
+        tenantId
       );
 
       await connection.execute(
@@ -457,7 +459,7 @@ const getOrderByCustomerID = async (req, res) => {
   const pool = pools[req.tenantId];
   const { id: user_id } = req.user;
   const [customer_id] = await pool.execute(
-    `SELECT id FROM customers WHERE id = ?`,
+    `SELECT id FROM customers WHERE user_id = ?`,
     [user_id]
   );
 
@@ -482,8 +484,8 @@ const getOrderByCustomerID = async (req, res) => {
          coupon_code, coupon_discount, currency,
          status_history
        FROM orders
-       WHERE customer_id = ?`,
-      [customer_id[0].id]
+       WHERE user_id = ?`,
+      [user_id]
     );
 
     if (orderRows.length === 0) {
@@ -494,7 +496,6 @@ const getOrderByCustomerID = async (req, res) => {
     }
 
     const orderIds = orderRows.map((order) => order.id);
-    const [order] = orderRows;
 
     // Get order items
     let items = [];
@@ -589,11 +590,11 @@ const getOrderByShopID = async (req, res) => {
       `
       SELECT COUNT(*) AS total
       FROM orders o
-      JOIN customers c ON o.customer_id = c.id
+      JOIN users u ON o.user_id = u.id
       WHERE o.shop_id = ?
       AND (
         o.order_number LIKE ? OR
-        c.name LIKE ?
+        u.full_name LIKE ?
       )
     `,
       [shop_id[0].id, `%${search}%`, `%${search}%`]
@@ -635,15 +636,14 @@ const getOrderByShopID = async (req, res) => {
         o.status_history,
         o.payment_metadata,
 
-        c.name AS customer_name,
-        c.email AS customer_email,
-        c.alternate_phone AS customer_phone
+        u.full_name AS customer_name,
+        u.email AS customer_email,
       FROM orders o
-      JOIN customers c ON o.customer_id = c.id
+      JOIN users u ON o.user_id = u.id
       WHERE o.shop_id = ?
         AND (
           o.order_number LIKE ?
-          OR c.name LIKE ?
+          OR u.full_name LIKE ?
         )
       ORDER BY o.order_date DESC
       LIMIT ?

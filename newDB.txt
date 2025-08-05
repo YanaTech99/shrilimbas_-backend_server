@@ -1,6 +1,6 @@
 CREATE TABLE users (
-  id INT NOT NULL AUTO_INCREMENT UNIQUE,
-  uuid CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+  id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  uuid BINARY(16) NOT NULL UNIQUE,
   tenant_id CHAR(36) NOT NULL,
   user_type ENUM('CUSTOMER','VENDOR','DELIVERY_BOY') NOT NULL DEFAULT 'CUSTOMER',
 
@@ -22,13 +22,14 @@ CREATE TABLE users (
 
   -- Timestamps
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  deleted_at timestamp default null
 );
 
 CREATE TABLE customers (
-    id INT NOT NULL AUTO_INCREMENT UNIQUE,
-    uuid CHAR(36) PRIMARY KEY DEFAULT (UUID()),
-    user_id char(36) not null,
+    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  uuid BINARY(16) NOT NULL UNIQUE,
+    user_id int not null,
     name VARCHAR(255),
     email VARCHAR(255),
     gender VARCHAR(10),
@@ -51,13 +52,13 @@ CREATE TABLE customers (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     
-    CONSTRAINT fk_customers_user FOREIGN KEY (user_id) REFERENCES users(uuid) ON DELETE CASCADE
+    CONSTRAINT fk_customers_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
 CREATE TABLE shops (
-    id INT NOT NULL AUTO_INCREMENT UNIQUE,
-    uuid CHAR(36) PRIMARY KEY DEFAULT (UUID()),
-    user_id char(36) not null,
+    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  uuid BINARY(16) NOT NULL UNIQUE,
+    user_id int not null,
     name VARCHAR(255) DEFAULT "",
     description TEXT,
     logo_url VARCHAR(512),
@@ -80,14 +81,14 @@ CREATE TABLE shops (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     
-    CONSTRAINT fk_shop_user FOREIGN KEY (user_id) REFERENCES users(uuid) ON DELETE CASCADE
+    CONSTRAINT fk_shop_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
 CREATE TABLE shop_bank_accounts (
-  id INT NOT NULL AUTO_INCREMENT UNIQUE,
-	uuid CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+  id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  uuid BINARY(16) NOT NULL UNIQUE,
 
-  shop_id char(36) NOT NULL,
+  shop_id int NOT NULL,
   account_holder_name VARCHAR(255) NOT NULL,
   account_number VARCHAR(50) NOT NULL,
   bank_name VARCHAR(255) NOT NULL,
@@ -103,15 +104,15 @@ CREATE TABLE shop_bank_accounts (
     created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
-  FOREIGN KEY (shop_id) REFERENCES shops(uuid) ON DELETE CASCADE
+  FOREIGN KEY (shop_id) REFERENCES shops(id) ON DELETE CASCADE
 );
 
 CREATE TABLE delivery_boys (
-  id INT NOT NULL AUTO_INCREMENT UNIQUE,
-    uuid CHAR(36) PRIMARY KEY DEFAULT (UUID()),
-    user_id char(36) not null,
+  id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  uuid BINARY(16) NOT NULL UNIQUE,
+    user_id int not null,
 
-  CONSTRAINT fk_delivery_boy_user FOREIGN KEY (user_id) REFERENCES users(uuid) ON DELETE CASCADE,
+  CONSTRAINT fk_delivery_boy_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
 
   name VARCHAR(100),
   email VARCHAR(255),
@@ -167,15 +168,15 @@ CREATE TABLE delivery_boys (
 );
 
 CREATE TABLE categories (
-    id INT NOT NULL AUTO_INCREMENT UNIQUE,
-    uuid CHAR(36) PRIMARY KEY DEFAULT (UUID()),
-
+    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  uuid BINARY(16) NOT NULL UNIQUE,
+    shop_id int not null,	
     title VARCHAR(255) NOT NULL,
     slug VARCHAR(255) UNIQUE, -- SEO-friendly URL
     description TEXT,
     image_url TEXT,
 
-    parent_id char(36) DEFAULT NULL, -- Self-reference for subcategories
+    parent_id int DEFAULT NULL, -- Self-reference for subcategories
 
     sort_order INT DEFAULT 0, -- For manual ordering
 
@@ -187,12 +188,14 @@ CREATE TABLE categories (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
-    FOREIGN KEY (parent_id) REFERENCES categories(uuid) ON DELETE SET NULL
+    FOREIGN KEY (parent_id) REFERENCES categories(id) ON DELETE SET NULL,
+    FOREIGN KEY (shop_id) REFERENCES shops(id) ON DELETE CASCADE
 );
 
 CREATE TABLE brands (
-    id INT NOT NULL AUTO_INCREMENT UNIQUE,
-    uuid CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  uuid BINARY(16) NOT NULL UNIQUE,
+    shop_id int not null,
     title VARCHAR(255) NOT NULL UNIQUE,
     slug VARCHAR(255) NOT NULL UNIQUE, -- For SEO-friendly URLs
     description TEXT,
@@ -205,37 +208,35 @@ CREATE TABLE brands (
     created_by INT, -- Optional: references admin/user who created
     updated_by INT, -- Optional: references admin/user who last updated
     created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    
+    FOREIGN KEY (shop_id) REFERENCES shops(id) ON DELETE CASCADE
 );
 
 CREATE TABLE products (
-  id INT NOT NULL AUTO_INCREMENT UNIQUE,
-    uuid CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+  id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  uuid BINARY(16) NOT NULL UNIQUE,
 
   product_name VARCHAR(255) NOT NULL,
   slug VARCHAR(255) UNIQUE,
   sku VARCHAR(100) UNIQUE NOT NULL,
   barcode VARCHAR(100) default '',
 
-  thumbnail TEXT,
-  gallery_images JSON,
   short_description TEXT,
   long_description TEXT,
   specifications JSON,
 
-  mrp DECIMAL(10,2) NOT NULL,
-  selling_price DECIMAL(10,2) NOT NULL,
-  cost_price DECIMAL(10,2) default 0,
   tax_percentage INT default 0,
   hsn_code VARCHAR(50) default '',
-
+  
+	stock_quantity INT DEFAULT 0,
   min_stock_alert INT DEFAULT 0,
   stock_unit VARCHAR(50) default '',
   is_in_stock BOOLEAN DEFAULT TRUE,
   warehouse_location VARCHAR(255) default '',
 
-  brand_id char(36) default '',
-  shop_id char(36) NOT NULL,
+  brand_id int default null,
+  shop_id int NOT NULL,
 
   tags JSON,
   attributes JSON,
@@ -260,15 +261,15 @@ CREATE TABLE products (
     created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
-  FOREIGN KEY (brand_id) REFERENCES brands(uuid) ON DELETE CASCADE,
-  FOREIGN KEY (shop_id) REFERENCES shops(uuid) ON DELETE CASCADE
+  FOREIGN KEY (brand_id) REFERENCES brands(id) ON DELETE set null,
+  FOREIGN KEY (shop_id) REFERENCES shops(id) ON DELETE CASCADE
 );
 
 CREATE TABLE product_variants (
-  id INT NOT NULL AUTO_INCREMENT UNIQUE,
-    uuid CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+  id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  uuid BINARY(16) NOT NULL UNIQUE,
 
-  product_id char(36) NOT NULL,
+  product_id int NOT NULL,
   sku VARCHAR(100) UNIQUE,
   barcode VARCHAR(100),
 
@@ -291,30 +292,30 @@ CREATE TABLE product_variants (
     created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
-  FOREIGN KEY (product_id) REFERENCES products(uuid) ON DELETE CASCADE
+  FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
 );
 
 CREATE TABLE product_categories (
-  id INT NOT NULL AUTO_INCREMENT UNIQUE,
-    uuid CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+  id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  uuid BINARY(16) NOT NULL UNIQUE,
 
-  product_id char(36) NOT NULL,
-  category_id char(36) NOT NULL,
+  product_id int NOT NULL,
+  category_id int NOT NULL,
   
   sort_order INT DEFAULT 0,         -- manual ordering within category if needed
 
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
-  FOREIGN KEY (product_id) REFERENCES products(uuid) ON DELETE CASCADE,
-  FOREIGN KEY (category_id) REFERENCES categories(uuid) ON DELETE CASCADE,
+  FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+  FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE,
 
   UNIQUE KEY unique_product_category (product_id, category_id)
 );
 
 CREATE TABLE sliders (
-  id INT NOT NULL AUTO_INCREMENT UNIQUE,
-    uuid CHAR(36) PRIMARY KEY DEFAULT (UUID()),
-	shop_id char(36) not null,
+  id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  uuid BINARY(16) NOT NULL UNIQUE,
+	shop_id int not null,
   name VARCHAR(100) NOT NULL,                      -- Identifier (e.g., 'homepage_deals')
   position ENUM(
     'homepage_top',
@@ -346,14 +347,14 @@ CREATE TABLE sliders (
     created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     
-  FOREIGN KEY (shop_id) REFERENCES shops(uuid) ON DELETE CASCADE
+  FOREIGN KEY (shop_id) REFERENCES shops(id) ON DELETE CASCADE
 );
 
 CREATE TABLE slider_items (
-  id INT NOT NULL AUTO_INCREMENT UNIQUE,
-	uuid CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+  id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  uuid BINARY(16) NOT NULL UNIQUE,
 
-  slider_id char(36) NOT NULL,
+  slider_id int NOT NULL,
   title VARCHAR(255),
   subtitle VARCHAR(255),
   image_url TEXT NOT NULL,
@@ -371,16 +372,16 @@ CREATE TABLE slider_items (
     created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
-  FOREIGN KEY (slider_id) REFERENCES sliders(uuid) ON DELETE CASCADE
+  FOREIGN KEY (slider_id) REFERENCES sliders(id) ON DELETE CASCADE
 );
 
 CREATE TABLE addresses (
-    id INT NOT NULL AUTO_INCREMENT UNIQUE,
-	uuid CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  uuid BINARY(16) NOT NULL UNIQUE,
 
     -- Foreign keys (only one of them should be NOT NULL per row)
-    customer_id char(36) NULL,
-    shop_id char(36) NULL,
+    customer_id int NULL,
+    shop_id int NULL,
 
     -- Address details
     address_line1 VARCHAR(255) NOT NULL,
@@ -406,8 +407,8 @@ CREATE TABLE addresses (
     updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
     -- Constraints
-    CONSTRAINT fk_customer FOREIGN KEY (customer_id) REFERENCES customers(uuid) ON DELETE CASCADE,
-    CONSTRAINT fk_shop FOREIGN KEY (shop_id) REFERENCES shops(uuid) ON DELETE CASCADE,
+    CONSTRAINT fk_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE,
+    CONSTRAINT fk_shop FOREIGN KEY (shop_id) REFERENCES shops(id) ON DELETE CASCADE,
     CONSTRAINT chk_customer_or_shop CHECK (
         (customer_id IS NOT NULL AND shop_id IS NULL) OR
         (customer_id IS NULL AND shop_id IS NOT NULL)
@@ -415,13 +416,13 @@ CREATE TABLE addresses (
 );
 
 CREATE TABLE cart_items (
-  id INT NOT NULL AUTO_INCREMENT UNIQUE,
-	uuid CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+  id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  uuid BINARY(16) NOT NULL UNIQUE,
 
-  customer_id CHAR(36) NOT NULL,
-  product_id char(36) NOT NULL,
-  product_variant_id char(36),
-  shop_id char(36) NOT NULL,
+  customer_id int NOT NULL,
+  product_id int NOT NULL,
+  product_variant_id int,
+  shop_id int NOT NULL,
 
   quantity INT NOT NULL CHECK (quantity > 0),
 
@@ -443,23 +444,23 @@ CREATE TABLE cart_items (
     created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
-  CONSTRAINT fk_cart_customer FOREIGN KEY (customer_id) REFERENCES customers(uuid) ON DELETE CASCADE,
-  CONSTRAINT fk_cart_product FOREIGN KEY (product_id) REFERENCES products(uuid) ON DELETE RESTRICT,
-  CONSTRAINT fk_cart_variant FOREIGN KEY (product_variant_id) REFERENCES product_variants(uuid) ON DELETE SET NULL,
-  CONSTRAINT fk_cart_shop FOREIGN KEY (shop_id) REFERENCES shops(uuid) ON DELETE CASCADE,
+  CONSTRAINT fk_cart_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE,
+  CONSTRAINT fk_cart_product FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_cart_variant FOREIGN KEY (product_variant_id) REFERENCES product_variants(id) ON DELETE SET NULL,
+  CONSTRAINT fk_cart_shop FOREIGN KEY (shop_id) REFERENCES shops(id) ON DELETE CASCADE,
 
   UNIQUE KEY uq_cart_unique (customer_id, product_id, product_variant_id)
 );
 
 CREATE TABLE orders (
-  id INT NOT NULL AUTO_INCREMENT UNIQUE,
-	uuid CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+  id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  uuid BINARY(16) NOT NULL UNIQUE,
   order_number VARCHAR(50) UNIQUE NOT NULL,
   invoice_url varchar(512) default '',
 
-  user_id CHAR(36) NOT NULL,
-  shop_id char(36) NOT NULL,
-  delivery_boy_id char(36) default '',
+  user_id int NOT NULL,
+  shop_id int NOT NULL,
+  delivery_boy_id int default null,
 
   order_status ENUM('pending','shipped','delivered', 'cancelled') DEFAULT 'pending', -- e.g., pending, shipped, delivered, cancelled
   order_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -498,18 +499,18 @@ CREATE TABLE orders (
     created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
-  CONSTRAINT fk_order_user FOREIGN KEY (user_id) REFERENCES users(uuid) ON DELETE CASCADE,
-  CONSTRAINT fk_order_shop FOREIGN KEY (shop_id) REFERENCES shops(uuid) ON DELETE CASCADE,
-  CONSTRAINT fk_order_delivery_boy FOREIGN KEY (delivery_boy_id) REFERENCES delivery_boys(uuid) ON DELETE SET NULL
+  CONSTRAINT fk_order_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_order_shop FOREIGN KEY (shop_id) REFERENCES shops(id) ON DELETE CASCADE,
+  CONSTRAINT fk_order_delivery_boy FOREIGN KEY (delivery_boy_id) REFERENCES delivery_boys(id) ON DELETE SET NULL
 );
 
 CREATE TABLE order_items (
-  id INT NOT NULL AUTO_INCREMENT UNIQUE,
-	uuid CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+  id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  uuid BINARY(16) NOT NULL UNIQUE,
 
-  order_id char(36) NOT NULL,
-  product_id char(36) NOT NULL,
-  product_variant_id char(36) default '',
+  order_id int NOT NULL,
+  product_id int NOT NULL,
+  product_variant_id int default null,
 
   quantity INT NOT NULL,
 
@@ -527,9 +528,9 @@ CREATE TABLE order_items (
     created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
-  CONSTRAINT fk_order_item_order FOREIGN KEY (order_id) REFERENCES orders(uuid) ON DELETE CASCADE,
-  CONSTRAINT fk_order_item_product FOREIGN KEY (product_id) REFERENCES products(uuid) ON DELETE RESTRICT,
-  CONSTRAINT fk_order_item_variant FOREIGN KEY (product_variant_id) REFERENCES product_variants(uuid) ON DELETE SET NULL
+  CONSTRAINT fk_order_item_order FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
+  CONSTRAINT fk_order_item_product FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_order_item_variant FOREIGN KEY (product_variant_id) REFERENCES product_variants(id) ON DELETE SET NULL
 );
 
 CREATE TABLE otp_requests (
@@ -560,8 +561,8 @@ CREATE TABLE otp_requests (
 );
 
 CREATE TABLE transactions (
-    id INT NOT NULL AUTO_INCREMENT UNIQUE,
-    uuid CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  uuid BINARY(16) NOT NULL UNIQUE,
 
         provider VARCHAR(50) NOT NULL,               -- e.g., 'razorpay', 'stripe'
     transaction_id VARCHAR(150) NOT NULL,        -- Razorpay payment_id / Stripe charge_id
@@ -574,8 +575,8 @@ CREATE TABLE transactions (
     status ENUM('created', 'processing', 'paid', 'failed', 'refunded') DEFAULT 'created',
     payment_method VARCHAR(50),                          -- card, upi, netbanking, etc.
 
-    order_id char(36) default '',
-    user_id char(36) not null,                                -- Optional FK to your users table
+    order_id int default null,
+    user_id int not null,                                -- Optional FK to your users table
     email VARCHAR(100) default '',
     contact VARCHAR(20) not null,
 
@@ -589,6 +590,6 @@ CREATE TABLE transactions (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
-    FOREIGN KEY (user_id) REFERENCES users(uuid),
-    CONSTRAINT fk_transaction_order FOREIGN KEY (order_id) REFERENCES orders(uuid) ON DELETE SET NULL
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    CONSTRAINT fk_transaction_order FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE SET NULL
 )

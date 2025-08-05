@@ -9,13 +9,14 @@ import {
 } from "../../utils/cloudinary.util.js";
 import fs from "fs";
 import { defaultProfileUrl, profileImageFolder } from "../../../constants.js";
+import { getPublicIdFromUrl } from "../../utils/extractPublicID.util.js";
 
 const updateProfile = async (req, res) => {
   const tenantId = req.tenantId;
   const pool = pools[tenantId];
   const { id: user_id } = req.user;
   const [customer_id] = await pool.query(
-    `SELECT * FROM customers WHERE id = ?`,
+    `SELECT * FROM customers WHERE user_id = ?`,
     [user_id]
   );
 
@@ -132,12 +133,7 @@ const updateProfile = async (req, res) => {
         customer_id[0].profile_image_url !== "" &&
         customer_id[0].profile_image_url !== defaultProfileUrl
       ) {
-        const urlArray = customer_id[0].profile_image_url.split("/");
-        const public_id =
-          urlArray[urlArray.length - 2] +
-          "/" +
-          urlArray[urlArray.length - 1].split(".")[0];
-
+        const public_id = getPublicIdFromUrl(customer_id[0].profile_image_url);
         await deleteFromCloudinary(public_id);
       }
 
@@ -320,7 +316,7 @@ const updateAddress = async (req, res) => {
   const pool = pools[req.tenantId];
   const { id: user_id } = req.user;
   const [customer_id] = await pool.query(
-    `SELECT id FROM customers WHERE id = ?`,
+    `SELECT id FROM customers WHERE user_id = ?`,
     [user_id]
   );
 
@@ -334,6 +330,19 @@ const updateAddress = async (req, res) => {
   const modifiedInput = sanitizeInput(req.body);
 
   const { address_id } = modifiedInput;
+
+  const [address] = await pool.query(
+    `SELECT * FROM addresses WHERE id = ? AND customer_id = ?`,
+    [address_id, customer_id[0].id]
+  );
+
+  if (!address || address.length === 0) {
+    return res.status(404).json({
+      success: false,
+      error: "Address not found",
+    });
+  }
+
   const {
     address_line1,
     address_line2,
@@ -395,8 +404,9 @@ const updateAddress = async (req, res) => {
 const getCustomerProfile = async (req, res) => {
   const pool = pools[req.tenantId];
   const { id: user_id } = req.user;
+  console.log("User ID:", user_id);
   const [customer_id] = await pool.query(
-    `SELECT id FROM customers WHERE id = ?`,
+    `SELECT id FROM customers WHERE user_id = ?`,
     [user_id]
   );
 

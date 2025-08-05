@@ -2,10 +2,9 @@ import pools from "../../db/index.js";
 
 const addToCart = async (req, res) => {
   const pool = pools[req.tenantId];
-
   const { id: user_id } = req.user;
   const [customer_id] = await pool.query(
-    `SELECT id FROM customers WHERE id = ?`,
+    `SELECT id FROM customers WHERE user_id = ?`,
     [user_id]
   );
 
@@ -16,10 +15,17 @@ const addToCart = async (req, res) => {
     });
   }
 
-  const { product_id, product_variant_id = null, item_quantity } = req.body;
+  const { product_id, product_variant_id, item_quantity } = req.body;
   let quantity = parseInt(item_quantity);
-  if (!product_id || quantity === undefined) {
-    return res.status(400).json({ error: "Invalid input fields" });
+  if (
+    !product_id ||
+    quantity === undefined ||
+    product_variant_id === undefined
+  ) {
+    return res.status(400).json({
+      success: false,
+      error: "Invalid input fields",
+    });
   }
 
   const connection = await pool.getConnection();
@@ -27,7 +33,7 @@ const addToCart = async (req, res) => {
   try {
     // 1. Check product exists and is active
     const [productRows] = await connection.execute(
-      "SELECT id, shop_id, product_name, selling_price, stock_quantity, sku FROM products WHERE id = ? AND status = 'active'",
+      "SELECT id, shop_id, product_name, tax_percentage FROM products WHERE id = ? AND is_active = true",
       [product_id]
     );
 
@@ -73,7 +79,7 @@ const addToCart = async (req, res) => {
 
     // 3. Compute pricing
     let subTotal = 0;
-    const price = parseFloat(product.selling_price);
+    const price = parseFloat(variant.selling_price);
     const tax = parseFloat(product.tax_percentage || 0);
     const discount = parseFloat(product.discount || 0);
 
@@ -91,14 +97,10 @@ const addToCart = async (req, res) => {
     // const shippingFee = 0; // Flat fee (optional logic)
     // const totalAmount = subTotal - discountAmount + taxAmount + shippingFee;
 
-    const sku = variant?.sku || product.sku;
-
     const product_snapshot = JSON.stringify({
       name: product.product_name,
-      base_price: product.selling_price,
-      variant_price: variant?.selling_price || 0,
-      final_price: lineTotal,
-      sku,
+      base_price: variant.selling_price,
+      final_price: subTotal,
     });
 
     // 4. Check if item already exists in cart
@@ -134,14 +136,13 @@ const addToCart = async (req, res) => {
       const [updated] = await connection.execute(
         `UPDATE cart_items
          SET quantity = ?, price_per_unit = ?, discount_per_unit = ?, tax_per_unit = ?, 
-             sku = ?, product_snapshot = ?, updated_at = CURRENT_TIMESTAMP
+             product_snapshot = ?, updated_at = CURRENT_TIMESTAMP
          WHERE id = ?`,
         [
           parseInt(quantity),
           price,
           discount,
           tax,
-          sku,
           product_snapshot,
           existingItem.id,
         ]
@@ -171,8 +172,8 @@ const addToCart = async (req, res) => {
       const [result] = await connection.execute(
         `INSERT INTO cart_items 
          (customer_id, product_id, product_variant_id, shop_id, quantity, 
-          price_per_unit, discount_per_unit, tax_per_unit, sku, product_snapshot)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          price_per_unit, discount_per_unit, tax_per_unit, product_snapshot)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           customer_id[0].id,
           product_id,
@@ -182,7 +183,6 @@ const addToCart = async (req, res) => {
           price,
           discount,
           tax,
-          sku,
           product_snapshot,
         ]
       );
@@ -199,7 +199,6 @@ const addToCart = async (req, res) => {
           price_per_unit: price,
           discount_per_unit: discount,
           tax_per_unit: tax,
-          sku: sku,
           product_snapshot: product_snapshot,
         },
       });
@@ -278,7 +277,7 @@ const getCart = async (req, res) => {
   const pool = pools[req.tenantId];
   const { id: user_id } = req.user;
   const [customer_id] = await pool.query(
-    `SELECT id FROM customers WHERE id = ?`,
+    `SELECT id FROM customers WHERE user_id = ?`,
     [user_id]
   );
 
@@ -312,21 +311,25 @@ const getCart = async (req, res) => {
           [item.product_id]
         );
 
+        const [variantRows] = await connection.execute(
+          `SELECT * FROM product_variants WHERE id = ?`,
+          [item.product_variant_id]
+        );
+
         const product = productRows[0];
+        const variant = variantRows[0];
 
         return {
           id: product.id,
           product_name: product.product_name,
-          thumbnail: product.thumbnail,
+          thumbnail: variant.thumbnail,
           short_description: product.short_description,
-          stock_quantity: item.stock_quantity,
-          mrp: product.mrp,
+          quantity: item.quantity,
           price_per_unit: item.price_per_unit,
           discount_per_unit: item.discount_per_unit,
-          tax_per_unit: item.tax_per_unit,
-          sku: item.sku,
+          tax_per_unit: product.tax_percentage,
           product_snapshot: item.product_snapshot,
-          finalAmmount: product.selling_price,
+          finalAmmount: item.total_price,
         };
       })
     );

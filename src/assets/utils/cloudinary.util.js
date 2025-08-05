@@ -58,12 +58,21 @@ function bufferToStream(buffer) {
 }
 
 const uploadInvoiceToCloudinary = (buffer, filename, path, tenantId) => {
-  const folder = tenantId === "otkhzjwq" ? "toolbizz" : "shrilimbas";
+  let mainFolder = null;
+  if (tenantId === "otkhzjwq") {
+    mainFolder = "toolbizz";
+  } else if (tenantId === "xnprapms") {
+    mainFolder = "shrilimbas";
+  } else if (tenantId === "bjxdtyyy") {
+    mainFolder = "shrilimbas_new";
+  } else {
+    throw new Error("Invalid tenant ID");
+  }
   return new Promise((resolve, reject) => {
     const uploadStream = cloudinary.uploader.upload_stream(
       {
         resource_type: "raw",
-        folder: `${folder}/invoices`,
+        folder: `${mainFolder}/invoices`,
         public_id: filename.replace(".pdf", "") + ".pdf",
         use_filename: true,
       },

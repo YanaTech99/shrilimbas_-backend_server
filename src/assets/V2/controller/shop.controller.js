@@ -6,21 +6,18 @@ import {
 } from "../../utils/cloudinary.util.js";
 
 import { sanitizeInput } from "../../utils/validation.util.js";
-import { defaultImageUrl } from "../../../constants.js";
-
-// Helper to extract Cloudinary public_id from image URL
-function getPublicIdFromUrl(url) {
-  const parts = url.split("/");
-  const file =
-    parts[parts.length - 2] + "/" + parts[parts.length - 1].split(".")[0];
-  return file;
-}
+import {
+  categoryImageFolder,
+  defaultImageUrl,
+  productImageFolder,
+} from "../../../constants.js";
+import { getPublicIdFromUrl } from "../../utils/extractPublicID.util.js";
 
 const updateShop = async (req, res) => {
   const pool = pools[req.tenantId];
   const { id: userId } = req.user;
   const [shop] = await pool.execute(
-    "SELECT id FROM shops WHERE user_id = ? AND status = 'ACTIVE' LIMIT 1",
+    "SELECT id FROM shops WHERE user_id = ? AND is_active = true LIMIT 1",
     [userId]
   );
 
@@ -42,7 +39,7 @@ const updateShop = async (req, res) => {
     "description",
     "logo_url",
     "license_number",
-    "status",
+    "is_active",
     "email",
     "contact_alternate_phone",
     "is_verified",
@@ -176,7 +173,8 @@ const updateAddress = async (req, res) => {
 };
 
 const addBrand = async (req, res) => {
-  const pool = pools[req.tenantId];
+  const tenantId = req.tenantId;
+  const pool = pools[tenantId];
   const { id: user_id, user_type } = req.user;
 
   if (user_type !== "VENDOR") {
@@ -242,7 +240,11 @@ const addBrand = async (req, res) => {
 
     // Upload image to Cloudinary
     if (image) {
-      const uploadResult = await uploadImageToCloudinary(image.path);
+      const uploadResult = await uploadImageToCloudinary(
+        image.path,
+        tenantId,
+        categoryImageFolder
+      );
       if (uploadResult?.secure_url) {
         image_url = uploadResult.secure_url;
       }
@@ -373,7 +375,7 @@ const addProducts = async (req, res) => {
   }
 
   const [shops] = await pool.execute(
-    "SELECT id FROM shops WHERE user_id = ? AND status = 'ACTIVE' LIMIT 1",
+    "SELECT id FROM shops WHERE user_id = ? AND is_active = true LIMIT 1",
     [user_id]
   );
 
@@ -391,7 +393,6 @@ const addProducts = async (req, res) => {
       : req.body;
 
   const product = sanitizeInput(formattedData);
-  console.log(product);
   const variants =
     typeof product.variants === "string"
       ? JSON.parse(product.variants)
@@ -407,7 +408,7 @@ const addProducts = async (req, res) => {
     productFiles[file.fieldname].push(file);
   }
 
-  const requiredFields = ["product_name", "sku"];
+  const requiredFields = ["product_name", "sku", "category_ids", "variants"];
   for (const field of requiredFields) {
     if (!product[field]) {
       return res.status(400).json({
@@ -472,6 +473,14 @@ const addProducts = async (req, res) => {
     )}) VALUES (${insertQuery.map(() => "?").join(", ")})`;
 
     const [productResult] = await connection.execute(productSql, insertValues);
+    if (productResult.affectedRows === 0) {
+      await connection.rollback();
+      return res.status(500).json({
+        success: false,
+        message: "Failed to insert product.",
+      });
+    }
+
     const productId = productResult.insertId;
 
     // Insert product categories
@@ -536,9 +545,8 @@ const addProducts = async (req, res) => {
         "selling_price",
         "cost_price",
         "stock",
-        "stock_alert_at",
-        "is_available",
-        "is_visible",
+        "min_stock_alert",
+        "is_active",
         "is_deleted",
       ];
 
@@ -556,16 +564,13 @@ const addProducts = async (req, res) => {
           );
         }
 
-        if (productFiles["variant_thumbnail_1"]?.length === 0) {
-          throw new Error(`Atleast one thumbnail is required`);
-        }
-
         const thumbnailFile = productFiles[`variant_thumbnail_${i + 1}`]?.[0];
         let thumbnailUpload = null;
         if (thumbnailFile && thumbnailFile.path) {
           thumbnailUpload = await uploadImageToCloudinary(
             thumbnailFile.path,
-            tenantId
+            tenantId,
+            productImageFolder
           );
           cloudinaryUploads.push(thumbnailUpload.public_id);
         }
@@ -575,7 +580,11 @@ const addProducts = async (req, res) => {
           productFiles[`variant_gallery_images_${i + 1}`] || [];
 
         for (const g of galleryFiles) {
-          const uploaded = await uploadImageToCloudinary(g.path, tenantId);
+          const uploaded = await uploadImageToCloudinary(
+            g.path,
+            tenantId,
+            productImageFolder
+          );
           cloudinaryUploads.push(uploaded.public_id);
           variantGalleryUrls.push(uploaded.secure_url);
         }
@@ -864,7 +873,8 @@ const updateProduct = async (req, res) => {
         if (thumbFile) {
           const uploaded = await uploadImageToCloudinary(
             thumbFile.path,
-            tenantId
+            tenantId,
+            productImageFolder
           );
           if (!uploaded?.secure_url) {
             throw new Error(
@@ -895,7 +905,11 @@ const updateProduct = async (req, res) => {
           const urls = [];
 
           for (const file of galleryFiles) {
-            const uploaded = await uploadImageToCloudinary(file.path, tenantId);
+            const uploaded = await uploadImageToCloudinary(
+              file.path,
+              tenantId,
+              productImageFolder
+            );
             if (!uploaded?.secure_url) {
               throw new Error(
                 `Failed to upload variant ${variant.id} gallery image.`
@@ -1325,7 +1339,11 @@ const addVariant = async (req, res) => {
     const gallery_imagesUrl = [];
 
     if (thumbnail) {
-      const uploadResult = await uploadImageToCloudinary(thumbnail, tenantId);
+      const uploadResult = await uploadImageToCloudinary(
+        thumbnail,
+        tenantId,
+        productImageFolder
+      );
       if (!uploadResult?.secure_url) {
         throw new Error("Failed to upload variant thumbnail.");
       }
@@ -1337,7 +1355,7 @@ const addVariant = async (req, res) => {
     if (gallery_images?.length) {
       const uploads = await Promise.all(
         gallery_images.map((imgPath) =>
-          uploadImageToCloudinary(imgPath, tenantId)
+          uploadImageToCloudinary(imgPath, tenantId, productImageFolder)
         )
       );
 
@@ -1420,7 +1438,7 @@ const getPaginatedproducts = async (req, res) => {
   const {
     page = 1,
     limit = 10,
-    status,
+    status = true,
     brand_id,
     category_id,
     search,
@@ -1434,7 +1452,7 @@ const getPaginatedproducts = async (req, res) => {
   try {
     // Step 1: Get vendor's shop ID
     const [shopRows] = await pool.execute(
-      "SELECT id FROM shops WHERE user_id = ? AND status = 'ACTIVE' LIMIT 1",
+      "SELECT id FROM shops WHERE user_id = ? AND is_active = true LIMIT 1",
       [user_id]
     );
 
@@ -1452,7 +1470,7 @@ const getPaginatedproducts = async (req, res) => {
 
     // Optional filters
     if (status) {
-      filters.push("p.status = ?");
+      filters.push("p.is_active = ?");
       values.push(status);
     }
 
@@ -1608,6 +1626,7 @@ const addCategory = async (req, res) => {
   const tenantId = req.tenantId;
   const pool = pools[tenantId];
   const { id: user_id, user_type } = req.user;
+  const image = req.file ? req.file : null;
 
   if (user_type !== "VENDOR") {
     return res.status(403).json({
@@ -1616,24 +1635,26 @@ const addCategory = async (req, res) => {
     });
   }
 
-  const [shop_id] = await pool.execute(
-    "SELECT id FROM shops WHERE user_id = ? AND status = 'ACTIVE' LIMIT 1",
+  const [shop] = await pool.execute(
+    "SELECT id FROM shops WHERE user_id = ? AND is_active = true LIMIT 1",
     [user_id]
   );
 
-  if (!shop_id || shop_id.length === 0) {
+  if (!shop || shop.length === 0) {
     return res.status(404).json({
       success: false,
       message: "Shop not found.",
     });
   }
 
+  const shop_id = shop[0].id;
+
   const modifiedInput = sanitizeInput(req.body);
   const category = modifiedInput;
 
   const [categoryExists] = await pool.execute(
     "SELECT * FROM categories WHERE title = ? AND shop_id = ?",
-    [category.title, shop_id[0].id]
+    [category.title, shop_id]
   );
 
   if (categoryExists.length > 0) {
@@ -1645,19 +1666,17 @@ const addCategory = async (req, res) => {
 
   const [countResult] = await pool.execute(
     "SELECT COUNT(*) AS total FROM categories WHERE shop_id = ?",
-    [shop_id[0].id]
+    [shop_id]
   );
 
   const sort_order = countResult[0].total + 1;
-
-  const image = req.file ? req.file : null;
 
   try {
     const {
       title,
       description,
       slug,
-      status = "active",
+      is_active = true,
       meta_title,
       meta_description,
       parent_id,
@@ -1666,24 +1685,28 @@ const addCategory = async (req, res) => {
     let validParentId = parent_id === "null" ? null : parent_id;
     const [result] = await pool.execute(
       `INSERT INTO categories 
-       (title, image_url, slug, description, status, sort_order, meta_title, meta_description, parent_id, shop_id)
+       (title, image_url, slug, description, is_active, sort_order, meta_title, meta_description, parent_id, shop_id)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         title,
         defaultImageUrl,
         slug,
         description || null,
-        status,
+        is_active,
         sort_order,
         meta_title || null,
         meta_description || null,
         validParentId || null,
-        shop_id[0].id,
+        shop_id,
       ]
     );
 
     if (image && image !== null) {
-      const uploadResult = await uploadImageToCloudinary(image.path, tenantId);
+      const uploadResult = await uploadImageToCloudinary(
+        image.path,
+        tenantId,
+        categoryImageFolder
+      );
       if (uploadResult) {
         await pool.execute("UPDATE categories SET image_url = ? WHERE id = ?", [
           uploadResult.secure_url,
@@ -1713,7 +1736,9 @@ const addCategory = async (req, res) => {
     });
   } finally {
     if (image && image !== null) {
-      fs.unlinkSync(image.path);
+      if (fs.existsSync(image.path)) {
+        fs.unlinkSync(image.path);
+      }
     }
   }
 };
@@ -1721,16 +1746,23 @@ const addCategory = async (req, res) => {
 const getPaginatedCategories = async (req, res) => {
   const pool = pools[req.tenantId];
   const { id: user_id } = req.user;
-  const [shop_id] = await pool.execute(
-    "SELECT id FROM shops WHERE user_id = ? AND status = 'ACTIVE' LIMIT 1",
+  const [shop] = await pool.execute(
+    "SELECT id FROM shops WHERE user_id = ? AND is_active = true LIMIT 1",
     [user_id]
   );
+  if (!shop || shop.length === 0) {
+    return res.status(404).json({
+      success: false,
+      message: "Shop not found.",
+    });
+  }
+  const shop_id = shop[0].id;
 
   try {
     const {
       page = 1,
-      limit,
-      status,
+      limit = 10,
+      status = true,
       title,
       parent_id,
       search,
@@ -1744,8 +1776,8 @@ const getPaginatedCategories = async (req, res) => {
 
     // Filters
     if (status) {
-      whereClauses.push("status = ?");
-      values.push(status.toLowerCase());
+      whereClauses.push("is_active = ?");
+      values.push(status);
     }
 
     if (title) {
@@ -1767,9 +1799,9 @@ const getPaginatedCategories = async (req, res) => {
       values.push(`%${search}%`, `%${search}%`, `%${search}%`);
     }
 
-    if (shop_id.length > 0) {
+    if (shop_id) {
       whereClauses.push("shop_id = ?");
-      values.push(shop_id[0].id);
+      values.push(shop_id);
     }
 
     const whereSQL = whereClauses.length

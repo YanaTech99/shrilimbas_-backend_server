@@ -72,7 +72,7 @@ const getSlidersByPosition = async (position, tenantId) => {
   const pool = pools[tenantId];
   const client = await pool.getConnection();
   const [slider] = await client.query(
-    `SELECT * FROM sliders WHERE position = ? AND is_active = 'active' ORDER BY sort_order LIMIT 1`,
+    `SELECT * FROM sliders WHERE position = ? AND is_active = true ORDER BY sort_order LIMIT 1`,
     [position]
   );
 
@@ -182,7 +182,7 @@ const getAppData = async (req, res) => {
     const queryPromises = [
       client.execute(`
         SELECT * FROM products
-        WHERE is_best_seller = true AND status = 'active'
+        WHERE is_best_seller = true AND is_active = true
         ORDER BY sort_order LIMIT 10
       `),
 
@@ -194,13 +194,13 @@ const getAppData = async (req, res) => {
 
       client.execute(`
         SELECT * FROM products
-        WHERE product_type = 'home_appliance' AND status = 'active'
+        WHERE product_type = 'home_appliance' AND is_active = true
         ORDER BY sort_order LIMIT 10
       `),
 
       client.execute(`
         SELECT * FROM products
-        WHERE is_featured = true AND status = 'active'
+        WHERE is_featured = true AND is_active = true
         ORDER BY sort_order
       `),
 
@@ -212,7 +212,7 @@ const getAppData = async (req, res) => {
 
       client.execute(`
         SELECT * FROM products
-        WHERE status = 'active'
+        WHERE is_active = true
         ORDER BY sort_order DESC LIMIT 30
       `),
     ];

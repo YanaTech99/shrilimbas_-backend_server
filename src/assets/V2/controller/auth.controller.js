@@ -252,7 +252,7 @@ const loginViaPhone = async (req, res) => {
         `INSERT INTO ${profileTable} (user_id, ${
           user_type === "VENDOR" ? "logo_url" : "profile_image_url"
         }) VALUES (?, ?)`,
-        [newUserRows[0].uuid, defaultProfileUrl]
+        [newUserRows[0].id, defaultProfileUrl]
       );
 
       if (profileInsertResult.affectedRows === 0) {
@@ -265,7 +265,7 @@ const loginViaPhone = async (req, res) => {
 
       const [profileRows] = await client.execute(
         `SELECT * FROM ${profileTable} WHERE user_id = ?`,
-        [newUserRows[0].uuid]
+        [newUserRows[0].id]
       );
 
       //insert into address table
@@ -273,7 +273,7 @@ const loginViaPhone = async (req, res) => {
         let adressFor = user_type === "VENDOR" ? "shop_id" : "customer_id";
         const [addressInsertResult] = await client.execute(
           `INSERT INTO addresses (address_line1, city, state, postal_code, country, ${adressFor}) VALUES ('main address', 'city', 'state', '12345', 'country', ?)`,
-          [profileRows[0].uuid]
+          [profileRows[0].id]
         );
 
         if (addressInsertResult.affectedRows === 0) {
