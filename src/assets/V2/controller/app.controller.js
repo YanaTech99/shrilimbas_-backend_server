@@ -142,6 +142,16 @@ const modifyProductResponse = async (data, tenantId) => {
         product.gallery_images = [];
       }
 
+      product.variants = variants.map((variant) => {
+        return {
+          ...variant,
+          gallery_images:
+            typeof variant.gallery_images === "string"
+              ? JSON.parse(variant.gallery_images)
+              : variant.gallery_images || [],
+        };
+      });
+
       const price = parseFloat(product.selling_price) || 0;
       const tax = parseFloat(product.tax_percentage || 0);
       const discount = parseFloat(product.discount || 0);
