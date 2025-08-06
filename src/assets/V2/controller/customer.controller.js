@@ -182,7 +182,7 @@ const addNewAddress = async (req, res) => {
   const pool = pools[req.tenantId];
   const { id: user_id } = req.user;
   const [customer_id] = await pool.query(
-    `SELECT id FROM customers WHERE id = ?`,
+    `SELECT id FROM customers WHERE user_id = ?`,
     [user_id]
   );
 
@@ -264,7 +264,7 @@ const deleteAddress = async (req, res) => {
   const pool = pools[req.tenantId];
   const { id: user_id } = req.user;
   const [customer_id] = await pool.query(
-    `SELECT id FROM customers WHERE id = ?`,
+    `SELECT id FROM customers WHERE user_id = ?`,
     [user_id]
   );
 
@@ -509,9 +509,9 @@ const getAddresses = async (req, res) => {
     );
 
     if (result.length === 0) {
-      return res.status(404).json({
-        success: false,
-        error: "Addresses not found",
+      return res.status(200).json({
+        success: true,
+        message: "Addresses not found",
       });
     }
 
