@@ -3,12 +3,10 @@ import { razorpay } from "../../paymentConfig/index.js";
 
 const createOrder = async (req, res) => {
   try {
-    const { amount, currency = "INR", receipt } = req.body;
+    const { amount, currency = "INR", receipt = "Receipt" } = req.body;
 
-    if (!amount || !receipt) {
-      return res
-        .status(400)
-        .json({ message: "Amount and receipt are required" });
+    if (!amount) {
+      return res.status(400).json({ message: "Amount is required" });
     }
 
     const options = {
@@ -23,10 +21,14 @@ const createOrder = async (req, res) => {
       success: true,
       message: "Order created successfully",
       data: {
-        orderId: order.id,
-        amount: order.amount,
+        id: order.id,
+        amount: order.amount / 100, // convert back to rupees
         currency: order.currency,
+        receipt: order.receipt,
+        status: order.status,
+        created_at: order.created_at,
       },
+      key: process.env.RAZORPAY_KEY_ID,
     });
   } catch (error) {
     console.error("Error creating Razorpay order:", error);
