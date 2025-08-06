@@ -489,7 +489,7 @@ const getAddresses = async (req, res) => {
   const pool = pools[req.tenantId];
   const { id: user_id } = req.user;
   const [customer_id] = await pool.query(
-    `SELECT id FROM customers WHERE id = ?`,
+    `SELECT id FROM customers WHERE user_id = ?`,
     [user_id]
   );
 
