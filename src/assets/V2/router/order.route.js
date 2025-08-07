@@ -10,7 +10,7 @@ import { verifyRazorpay } from "../../middleware/razorpayVerify.middleware.js";
 
 const router = Router();
 
-router.route("/placeOrder").post(authenticateToken, verifyRazorpay, placeOrder);
+router.route("/placeOrder").post(authenticateToken, placeOrder);
 
 router.route("/getOrderByShopID").get(authenticateToken, getOrderByShopID);
 
