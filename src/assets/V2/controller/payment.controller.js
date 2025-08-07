@@ -133,7 +133,7 @@ const verifyPayment = async (req, res) => {
   const transaction_id = existingTransaction[0].id;
 
   const [updateTransaction] = await pool.execute(
-    `UPDATE transactions SET payment_status = 'paid', transaction_id = ? WHERE id = ?`,
+    `UPDATE transactions SET status = 'paid', transaction_id = ? WHERE id = ?`,
     [razorpay_payment_id, transaction_id]
   );
 
