@@ -4,182 +4,337 @@
     <meta charset="UTF-8" />
     <title>Invoice - <%= order.order_number %></title>
     <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
       body {
         font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-        margin: 40px;
+        background-color: #f5f7fa;
         color: #333;
+        line-height: 1.5;
+      }
+
+      .container {
+        max-width: 800px;
+        margin: 20px auto;
+        background: white;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        overflow: hidden;
       }
 
       .header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 30px;
         text-align: center;
-        margin-bottom: 40px;
+        position: relative;
+      }
+
+      .header::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><pattern id="grid" width="10" height="10" patternUnits="userSpaceOnUse"><path d="M 10 0 L 0 0 0 10" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="0.5"/></pattern></defs><rect width="100" height="100" fill="url(%23grid)"/></svg>');
+      }
+
+      .header-content {
+        position: relative;
+        z-index: 1;
       }
 
       .header h1 {
-        margin: 0;
-        font-size: 28px;
-        color: #2c3e50;
+        font-size: 36px;
+        font-weight: 700;
+        margin-bottom: 10px;
+        text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
       }
 
-      .section {
+      .invoice-number {
+        font-size: 18px;
+        opacity: 0.9;
+        margin-bottom: 5px;
+      }
+
+      .invoice-date {
+        font-size: 14px;
+        opacity: 0.8;
+      }
+
+      .content {
+        padding: 30px;
+      }
+
+      .billing-section {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 30px;
         margin-bottom: 30px;
       }
 
-      .section h2 {
-        font-size: 16px;
-        border-bottom: 1px solid #ccc;
-        padding-bottom: 5px;
-        margin-bottom: 10px;
-        color: #555;
+      .billing-box {
+        background: #f8f9fc;
+        border: 1px solid #e3e8ee;
+        border-radius: 6px;
+        padding: 20px;
       }
 
-      .info p {
-        margin: 4px 0;
+      .billing-box h3 {
+        color: #4a5568;
         font-size: 14px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 15px;
+        padding-bottom: 8px;
+        border-bottom: 2px solid #667eea;
       }
 
-      table {
+      .billing-info p {
+        margin-bottom: 8px;
+        font-size: 14px;
+        color: #2d3748;
+      }
+
+      .billing-info strong {
+        color: #1a202c;
+      }
+
+      .payment-section {
+        background: #f8f9fc;
+        border: 1px solid #e3e8ee;
+        border-radius: 6px;
+        padding: 20px;
+        margin-bottom: 30px;
+      }
+
+      .payment-section h3 {
+        color: #4a5568;
+        font-size: 14px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 15px;
+        padding-bottom: 8px;
+        border-bottom: 2px solid #667eea;
+      }
+
+      .items-section {
+        margin-bottom: 30px;
+      }
+
+      .items-header {
+        background: linear-gradient(90deg, #667eea, #764ba2);
+        color: white;
+        padding: 15px 0;
+        text-align: center;
+        margin-bottom: 20px;
+        border-radius: 6px;
+      }
+
+      .items-header h3 {
+        font-size: 16px;
+        font-weight: 600;
+      }
+
+      .items-table {
         width: 100%;
         border-collapse: collapse;
-        margin-top: 10px;
+        background: white;
+        border-radius: 6px;
+        overflow: hidden;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
       }
 
-      th,
-      td {
-        border: 1px solid #ddd;
-        padding: 10px;
+      .items-table th {
+        background: #f7fafc;
+        color: #4a5568;
+        font-weight: 600;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        padding: 15px 12px;
+        text-align: left;
+        border-bottom: 1px solid #e2e8f0;
+      }
+
+      .items-table td {
+        padding: 15px 12px;
+        border-bottom: 1px solid #f1f5f9;
         font-size: 14px;
       }
 
-      th {
-        background-color: #f4f6f8;
-        text-align: left;
-        color: #333;
+      .items-table tbody tr:hover {
+        background-color: #f8f9fc;
       }
 
-      tfoot td {
-        font-weight: bold;
-        background-color: #f9f9f9;
+      .items-table .qty-col,
+      .items-table .price-col,
+      .items-table .discount-col,
+      .items-table .tax-col,
+      .items-table .total-col {
+        text-align: right;
+        font-weight: 500;
       }
 
-      .totals {
-        float: right;
-        width: 50%;
+      .summary-section {
+        background: #f8f9fc;
+        border-radius: 6px;
+        padding: 25px;
         margin-top: 20px;
       }
 
-      .totals table {
+      .summary-table {
         width: 100%;
+        max-width: 350px;
+        margin-left: auto;
+      }
+
+      .summary-table tr {
+        border-bottom: 1px solid #e2e8f0;
+      }
+
+      .summary-table tr:last-child {
+        border-bottom: none;
+      }
+
+      .summary-table td {
+        padding: 12px 0;
+        font-size: 14px;
+      }
+
+      .summary-table td:first-child {
+        color: #4a5568;
+        font-weight: 500;
+      }
+
+      .summary-table td:last-child {
+        text-align: right;
+        font-weight: 600;
+        color: #2d3748;
+      }
+
+      .total-row {
+        background: linear-gradient(90deg, #667eea, #764ba2);
+        color: white !important;
+        border-radius: 6px;
+      }
+
+      .total-row td {
+        color: white !important;
+        font-size: 16px !important;
+        font-weight: 700 !important;
+        padding: 15px 20px !important;
+      }
+
+      .notes-section {
+        margin-top: 30px;
+        padding: 20px;
+        background: #fffbeb;
+        border-left: 4px solid #f59e0b;
+        border-radius: 0 6px 6px 0;
+      }
+
+      .notes-section h3 {
+        color: #92400e;
+        font-size: 14px;
+        margin-bottom: 10px;
+        font-weight: 600;
+      }
+
+      .notes-section p {
+        color: #78350f;
+        font-size: 14px;
+        line-height: 1.6;
       }
 
       .footer {
-        margin-top: 60px;
         text-align: center;
+        padding: 20px;
+        background: #f7fafc;
+        color: #718096;
         font-size: 12px;
-        color: #888;
+        border-top: 1px solid #e2e8f0;
+      }
+
+      @media (max-width: 768px) {
+        .container {
+          margin: 10px;
+          border-radius: 0;
+        }
+
+        .billing-section {
+          grid-template-columns: 1fr;
+          gap: 20px;
+        }
+
+        .content {
+          padding: 20px;
+        }
+
+        .items-table {
+          font-size: 12px;
+        }
+
+        .items-table th,
+        .items-table td {
+          padding: 10px 8px;
+        }
       }
     </style>
   </head>
   <body>
-    <div class="header">
-      <h1>Invoice</h1>
-      <p>Order #: <strong><%= order.order_number %></strong></p>
-      <p>Date: <%= order.date %> | Time: <%= order.time %></p>
-    </div>
+    <div class="container">
+      <!-- Header Section -->
+      <div class="header">
+        <div class="header-content">
+          <h1>INVOICE</h1>
+          <div class="invoice-number">
+            Order #: <strong><%= order.order_number %></strong>
+          </div>
+          <div class="invoice-date">
+            Date: <%= order.date %> | Time: <%= order.time %>
+          </div>
+        </div>
+      </div>
 
-    <div class="section info">
-      <h2>Customer Information</h2>
-      <p><strong>Name:</strong> <%= order.customer.name %></p>
-      <p><strong>Email:</strong> <%= order.customer.email %></p>
-      <p><strong>Phone:</strong> <%= order.customer.phone %></p>
-    </div>
+      <div class="content">
+        <!-- Billing Information -->
+        <div class="billing-section">
+          <div class="billing-box">
+            <h3>Customer Information</h3>
+            <div class="billing-info">
+              <p><strong>Name:</strong> <%= order.customer.name %></p>
+              <p><strong>Email:</strong> <%= order.customer.email %></p>
+              <p><strong>Phone:</strong> <%= order.customer.phone %></p>
+            </div>
+          </div>
 
-    <div class="section info">
-      <h2>Delivery Address</h2>
-      <p><%= order.delivery_address.address %></p>
-      <p>
-        <%= order.delivery_address.city %>, <%= order.delivery_address.state %>,
-        <%= order.delivery_address.country %> - <%=
-        order.delivery_address.postal_code %>
-      </p>
-      <% if (order.delivery_address.instructions) { %>
-      <p>
-        <strong>Instructions:</strong> <%= order.delivery_address.instructions
-        %>
-      </p>
-      <% } %>
-    </div>
-
-    <div class="section info">
-      <h2>Payment</h2>
-      <p><strong>Method:</strong> <%= order.payment_method %></p>
-      <p><strong>Status:</strong> <%= order.payment_status %></p>
-    </div>
-
-    <div class="section">
-      <h2>Order Items</h2>
-      <table>
-        <thead>
-          <tr>
-            <th>Product</th>
-            <th>SKU</th>
-            <th>Qty</th>
-            <th>Price</th>
-            <th>Discount</th>
-            <th>Tax</th>
-            <th>Total</th>
-          </tr>
-        </thead>
-        <tbody>
-          <% order.items.forEach(item => { %>
-          <tr>
-            <td><%= item.name %></td>
-            <td><%= item.sku %></td>
-            <td><%= item.quantity %></td>
-            <td>₹<%= item.price_per_unit.toFixed(2) %></td>
-            <td>₹<%= item.discount_per_unit.toFixed(2) %></td>
-            <td>₹<%= item.tax_per_unit.toFixed(2) %></td>
-            <td>₹<%= item.total.toFixed(2) %></td>
-          </tr>
-          <% }); %>
-        </tbody>
-      </table>
-    </div>
-
-    <div class="totals">
-      <table>
-        <tr>
-          <td>Subtotal:</td>
-          <td>₹<%= order.price_summary.sub_total.toFixed(2) %></td>
-        </tr>
-        <tr>
-          <td>Discount:</td>
-          <td>- ₹<%= order.price_summary.discount.toFixed(2) %></td>
-        </tr>
-        <tr>
-          <td>Tax:</td>
-          <td>₹<%= order.price_summary.tax.toFixed(2) %></td>
-        </tr>
-        <tr>
-          <td>Shipping Fee:</td>
-          <td>₹<%= order.price_summary.shipping_fee.toFixed(2) %></td>
-        </tr>
-        <tr>
-          <td><strong>Total:</strong></td>
-          <td><strong>₹<%= order.price_summary.total.toFixed(2) %></strong></td>
-        </tr>
-      </table>
-    </div>
-
-    <% if (order.notes) { %>
-    <div class="section">
-      <h2>Notes</h2>
-      <p><%= order.notes %></p>
-    </div>
-    <% } %>
-
-    <div class="footer">
-      <p>Thank you for shopping with us!</p>
+          <div class="billing-box">
+            <h3>Delivery Address</h3>
+            <div class="billing-info">
+              <p><%= order.delivery_address.address %></p>
+              <p>
+                <%= order.delivery_address.city %>, <%=
+                order.delivery_address.state %>, <%=
+                order.delivery_address.country %> - <%=
+                order.delivery_address.postal_code %>
+              </p>
+              <% if (order.delivery_address.instructions) { %>
+              <p>
+                <strong>Instructions:</strong> <%=
+                order.delivery_address.instructions %>
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </body>
 </html>

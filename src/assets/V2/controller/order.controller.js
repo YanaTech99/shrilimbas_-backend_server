@@ -49,6 +49,7 @@ const placeOrder = async (req, res) => {
 
     // Validate and lock product stock
     let subTotal = 0;
+    let tax_subtotal = 0;
     const orderItems = [];
     let shop_id = null;
 
@@ -108,15 +109,16 @@ const placeOrder = async (req, res) => {
 
       const price = parseFloat(product.variant_selling_price);
       const tax = parseFloat(product.tax_percentage || 0);
-      const discount = parseFloat(product.discount || 0);
+      const discount = 0;
 
-      const lineTotal = (price - discount + tax) * item.quantity;
+      const lineTotal = price * item.quantity;
       subTotal += lineTotal;
+      tax_subtotal += tax * item.quantity;
 
       orderItems.push({
         ...item,
         price_per_unit: price,
-        discount_per_unit: discount,
+        discount_per_unit: discount || 0,
         tax_per_unit: tax,
         sku: product.sku || "",
         product_snapshot: JSON.stringify(product),
@@ -147,7 +149,7 @@ const placeOrder = async (req, res) => {
     //   discountAmount = 50; // dummy value
     // }
 
-    const taxAmount = 0; // 10% tax
+    const taxAmount = tax_subtotal; // 10% tax
     const shippingFee = 0; // Flat fee (optional logic)
     const totalAmount = subTotal - discountAmount + taxAmount + shippingFee;
 
@@ -243,12 +245,22 @@ const placeOrder = async (req, res) => {
       }
     }
 
+    // Remove from cart items
+    const [cartResult] = await connection.execute(
+      `DELETE FROM cart_items WHERE customer_id = ?`,
+      [customer_id[0].id]
+    );
+
+    if (cartResult.affectedRows === 0) {
+      console.error("Failed to remove cart items");
+    }
+
     await connection.commit();
 
     // Get full customer details (optional additional fields)
 
     const [customerDetails] = await pool.query(
-      `SELECT name, email, alternate_phone FROM customers WHERE id = ?`,
+      `SELECT name, email, alternate_phone FROM customers WHERE user_id = ?`,
       [user_id]
     );
 
@@ -336,7 +348,7 @@ const placeOrder = async (req, res) => {
     );
 
     // Upload PDF to Cloudinary
-    let cloudinaryUrl = null;
+    let cloudinaryUrl = "";
     try {
       cloudinaryUrl = await uploadInvoiceToCloudinary(
         pdfBuffer,
@@ -483,8 +495,7 @@ const getOrderByCustomerID = async (req, res) => {
          sub_total, discount_amount, tax_amount, shipping_fee, total_amount,
          coupon_code, coupon_discount, currency,
          status_history
-       FROM orders
-       WHERE user_id = ?`,
+       FROM orders WHERE user_id = ? ORDER BY created_at DESC`,
       [user_id]
     );
 

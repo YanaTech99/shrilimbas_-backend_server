@@ -81,9 +81,9 @@ const addToCart = async (req, res) => {
     let subTotal = 0;
     const price = parseFloat(variant.selling_price);
     const tax = parseFloat(product.tax_percentage || 0);
-    const discount = parseFloat(product.discount || 0);
+    const discount = 0;
 
-    const lineTotal = (price - discount + tax) * quantity;
+    const lineTotal = (price + tax) * quantity;
     subTotal += lineTotal;
 
     // Apply coupon logic (stub example)
@@ -100,6 +100,9 @@ const addToCart = async (req, res) => {
     const product_snapshot = JSON.stringify({
       name: product.product_name,
       base_price: variant.selling_price,
+      tax_per_unit: tax,
+      discount: discount,
+      quantity: quantity,
       final_price: subTotal,
     });
 
@@ -141,7 +144,7 @@ const addToCart = async (req, res) => {
         [
           parseInt(quantity),
           price,
-          discount,
+          discount || 0,
           tax,
           product_snapshot,
           existingItem.id,
@@ -181,7 +184,7 @@ const addToCart = async (req, res) => {
           product.shop_id,
           parseInt(quantity),
           price,
-          discount,
+          discount || 0,
           tax,
           product_snapshot,
         ]
@@ -197,7 +200,7 @@ const addToCart = async (req, res) => {
           shop_id: product.shop_id,
           quantity: quantity,
           price_per_unit: price,
-          discount_per_unit: discount,
+          discount_per_unit: discount || 0,
           tax_per_unit: tax,
           product_snapshot: product_snapshot,
         },
