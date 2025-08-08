@@ -142,21 +142,27 @@ const modifyProductResponse = async (data, tenantId) => {
         product.gallery_images = [];
       }
 
+      const price = parseFloat(variants[0].selling_price) || 0;
+      const tax = parseFloat(product.tax_percentage || 0);
+      const discount = parseFloat(product.discount || 0);
+      const total_price = price - discount + tax;
+
       product.variants = variants.map((variant) => {
+        const price = parseFloat(variants[0].selling_price) || 0;
+        const tax = parseFloat(product.tax_percentage || 0);
+        const discount = parseFloat(product.discount || 0);
+        const total_price = price - discount + tax;
+        const is_in_stock = variant.stock > 0 ? 1 : 0;
         return {
           ...variant,
+          finalAmmount: total_price,
+          is_in_stock,
           gallery_images:
             typeof variant.gallery_images === "string"
               ? JSON.parse(variant.gallery_images)
               : variant.gallery_images || [],
         };
       });
-
-      const price = parseFloat(product.selling_price) || 0;
-      const tax = parseFloat(product.tax_percentage || 0);
-      const discount = parseFloat(product.discount || 0);
-
-      const total_price = price - discount + tax;
 
       return {
         ...product,
