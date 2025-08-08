@@ -1,5 +1,86 @@
 import pools from "../../db/index.js";
 
+// helper function to modify product response
+const modifyProductResponse = async (data, tenantId) => {
+  const pool = pools[tenantId];
+  const modifiedData = await Promise.all(
+    data.map(async (product) => {
+      const product_id = product.id;
+
+      // Parse JSON fields
+      const fields = [
+        "specifications",
+        "tags",
+        "attributes",
+        "custom_fields",
+        "gallery_images",
+      ];
+
+      for (const field of fields) {
+        if (product[field]) {
+          product[field] =
+            typeof product[field] === "string"
+              ? JSON.parse(product[field])
+              : product[field];
+        }
+      }
+
+      // Fetch categories
+      const [categories] = await pool.execute(
+        `
+        SELECT title FROM categories
+        WHERE id IN (
+          SELECT category_id FROM product_categories
+          WHERE product_id = ?
+        )
+      `,
+        [product_id]
+      );
+      const categoriesArray = categories.map((category) => category.title);
+
+      // fetch product variants
+      const [variants] = await pool.execute(
+        `SELECT * FROM product_variants WHERE product_id = ?`,
+        [product_id]
+      );
+
+      product.thumbnail = variants[0]?.thumbnail || "";
+      if (variants[0].gallery_images) {
+        product.gallery_images =
+          typeof variants[0].gallery_images === "string"
+            ? JSON.parse(variants[0].gallery_images)
+            : variants[0].gallery_images;
+      } else {
+        product.gallery_images = [];
+      }
+
+      product.variants = variants.map((variant) => {
+        return {
+          ...variant,
+          gallery_images:
+            typeof variant.gallery_images === "string"
+              ? JSON.parse(variant.gallery_images)
+              : variant.gallery_images || [],
+        };
+      });
+
+      const price = parseFloat(product.selling_price) || 0;
+      const tax = parseFloat(product.tax_percentage || 0);
+      const discount = parseFloat(product.discount || 0);
+
+      const total_price = price - discount + tax;
+
+      return {
+        ...product,
+        categories: categoriesArray,
+        finalAmmount: total_price,
+      };
+    })
+  );
+
+  return modifiedData;
+};
+
 const getPaginatedCategories = async (req, res) => {
   const pool = pools[req.tenantId];
 
@@ -155,8 +236,8 @@ const getPaginatedProducts = async (req, res) => {
   const offset = (parseInt(page) - 1) * parseInt(limit);
   const filters = [
     "p.deleted_at IS NULL",
-    "p.is_active = TRUE",
     "p.is_in_stock = TRUE",
+    "p.is_active = TRUE",
     "p.is_deleted = FALSE",
   ];
   const values = [];
@@ -189,71 +270,9 @@ const getPaginatedProducts = async (req, res) => {
       });
     }
 
-    const productIds = products.map((p) => p.id);
-
-    // filter by category
-    if (category_id) {
-      const [categoryFiltered] = await pool.execute(
-        `SELECT DISTINCT product_id FROM product_categories WHERE category_id = ?`,
-        [category_id]
-      );
-      const validIds = new Set(categoryFiltered.map((r) => r.product_id));
-      products = products.filter((p) => validIds.has(p.id));
-    }
-
-    // Fetch categories
-    const [categoryRows] = await pool.execute(
-      `SELECT pc.product_id, c.title
-       FROM product_categories pc
-       JOIN categories c ON pc.category_id = c.id
-       WHERE pc.product_id IN (${productIds.map(() => "?").join(",")})`,
-      productIds
-    );
-
-    const categoryMap = {};
-    for (const row of categoryRows) {
-      if (!categoryMap[row.product_id]) categoryMap[row.product_id] = [];
-      categoryMap[row.product_id].push(row.title);
-    }
-
-    // Fetch variants
-    const [variantRows] = await pool.execute(
-      `SELECT
-         product_id, sku, color, size, selling_price
-       FROM product_variants
-       WHERE product_id IN (${productIds.map(() => "?").join(",")})
-         AND is_deleted = FALSE
-         AND is_active = TRUE`,
-      productIds
-    );
-
-    const variantMap = {};
-    for (const variant of variantRows) {
-      if (!variantMap[variant.product_id]) variantMap[variant.product_id] = [];
-      variantMap[variant.product_id].push(variant);
-    }
-
-    // Total count for pagination
     const total = products.length;
 
-    // Assemble response
-    const response = products.map((product) => {
-      const fields = ["specifications", "tags", "attributes", "custom_fields"];
-
-      for (const field of fields) {
-        if (product[field]) {
-          product[field] =
-            typeof product[field] === "string"
-              ? JSON.parse(product[field])
-              : product[field];
-        }
-      }
-
-      return {
-        ...product,
-        finalAmmount: product.selling_price,
-      };
-    });
+    const response = await modifyProductResponse(products, req.tenantId);
 
     return res.status(200).json({
       success: true,
