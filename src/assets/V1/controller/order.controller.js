@@ -3,6 +3,7 @@ import { generateInvoicePDF } from "../../utils/generateInvoice.util.js";
 import { uploadInvoiceToCloudinary } from "../../utils/cloudinary.util.js";
 import fs from "fs";
 import crypto from "crypto";
+import { error } from "console";
 
 const placeOrder = async (req, res) => {
   const pool = pools[req.tenantId];
@@ -753,6 +754,7 @@ const getOrderByShopID = async (req, res) => {
     return res.status(200).json({
       success: true,
       orders: response,
+      message: "Orders fetched successfully",
       pagination: {
         total,
         page,
@@ -764,7 +766,7 @@ const getOrderByShopID = async (req, res) => {
     console.error("Error fetching orders:", err);
     return res
       .status(500)
-      .json({ success: false, message: "Failed to fetch orders" });
+      .json({ success: false, error: "Failed to fetch orders" });
   } finally {
     if (connection) connection.release();
   }

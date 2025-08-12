@@ -10,6 +10,7 @@ import {
   getPaginatedBrands,
   getPaginatedCategories,
   getPaginatedproducts,
+  getUsers,
   updateAddress,
   updateCategory,
   updateProduct,
@@ -50,6 +51,10 @@ router.route("/getCategories").get(authenticateToken, getPaginatedCategories);
 router.route("/getBrands").get(authenticateToken, getPaginatedBrands);
 
 router.route("/deleteCategory").delete(authenticateToken, deleteCategory);
-router.route("/updateCategory").patch(authenticateToken, updateCategory);
+router
+  .route("/updateCategory")
+  .patch(authenticateToken, upload.single("categoryImage"), updateCategory);
+
+router.route("/getUsers").get(authenticateToken, getUsers);
 
 export default router;
