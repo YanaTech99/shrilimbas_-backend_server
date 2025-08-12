@@ -110,6 +110,9 @@ const modifyProductResponse = (products, variantsMap, categoriesMap) => {
     // Use first variant for some fields fallback
     const firstVariant = productVariants[0] || {};
 
+    // attach thumbnail from first variant
+    product.thumbnail = firstVariant.thumbnail;
+
     // Parse gallery_images for first variant
     if (firstVariant.gallery_images) {
       product.gallery_images =
