@@ -784,7 +784,7 @@ const updateProduct = async (req, res) => {
       "is_new_arrival",
       "is_best_seller",
       "product_type",
-      "status",
+      "is_active",
       "meta_title",
       "meta_description",
     ];
@@ -1021,7 +1021,7 @@ const deleteProduct = async (req, res) => {
   const { product_id } = req.body;
 
   const [shopRows] = await pool.execute(
-    "SELECT id FROM shops WHERE user_id = ? AND status = 'ACTIVE' LIMIT 1",
+    "SELECT id FROM shops WHERE user_id = ? AND is_active = true LIMIT 1",
     [user_id]
   );
 
@@ -1241,8 +1241,10 @@ const addVariant = async (req, res) => {
   const tenantId = req.tenantId;
   const pool = pools[tenantId];
   const { id: user_id, user_type } = req.user;
+  const variantImages = req.files || [];
 
   if (user_type !== "VENDOR") {
+    removeLocalFiles(variantImages);
     return res.status(403).json({
       success: false,
       error: "Forbidden: Only vendors can add variants to their products.",
@@ -1258,11 +1260,12 @@ const addVariant = async (req, res) => {
   const product_id = req.body.product_id;
 
   const [shopRows] = await pool.execute(
-    "SELECT id FROM shops WHERE user_id = ? AND status = 'ACTIVE' LIMIT 1",
+    "SELECT id FROM shops WHERE user_id = ? AND is_active = true LIMIT 1",
     [user_id]
   );
 
   if (!shopRows?.length) {
+    removeLocalFiles(variantImages);
     return res
       .status(404)
       .json({ success: false, error: "Shop not found for this vendor." });
@@ -1276,6 +1279,7 @@ const addVariant = async (req, res) => {
   );
 
   if (!productRows?.length) {
+    removeLocalFiles(variantImages);
     return res
       .status(404)
       .json({ success: false, error: "Product not found." });
@@ -1285,7 +1289,7 @@ const addVariant = async (req, res) => {
   const gallery_images = [];
   const uploadedImages = [];
 
-  req.files.forEach((file) => {
+  variantImages.forEach((file) => {
     if (file.fieldname === "thumbnail") {
       thumbnail = file.path;
     } else if (file.fieldname === "gallery_images") {
@@ -1418,16 +1422,7 @@ const addVariant = async (req, res) => {
       error: error.message || "Failed to add variant.",
     });
   } finally {
-    if (thumbnail && fs.existsSync(thumbnail)) {
-      fs.unlinkSync(thumbnail);
-    }
-
-    for (const image of gallery_images) {
-      if (image && fs.existsSync(image)) {
-        fs.unlinkSync(image);
-      }
-    }
-
+    removeLocalFiles(variantImages);
     client.release();
   }
 };
@@ -1446,7 +1441,7 @@ const getPaginatedproducts = async (req, res) => {
   const {
     page = 1,
     limit = 10,
-    status = true,
+    status = false,
     brand_id,
     category_id,
     search,
@@ -1575,6 +1570,7 @@ const getPaginatedproducts = async (req, res) => {
         sku: product.sku,
         total_stock: product.stock_quantity,
         thumbnail: mainVariant.thumbnail,
+        selling_price: mainVariant.selling_price,
         tax_percentage: product.tax_percentage,
         min_stock_alert: product.min_stock_alert,
         stock_unit: product.stock_unit,
@@ -1592,6 +1588,7 @@ const getPaginatedproducts = async (req, res) => {
         is_featured: product.is_featured || false,
         is_new_arrival: product.is_new_arrival || false,
         is_best_seller: product.is_best_seller || false,
+        is_active: product.is_active || false,
         product_type: product.product_type || "",
         meta_title: product.meta_title || "",
         meta_description: product.meta_description || "",
@@ -1678,7 +1675,7 @@ const addCategory = async (req, res) => {
       title,
       description,
       slug,
-      is_active = true,
+      is_active = "1",
       meta_title,
       meta_description,
       parent_id,
@@ -1694,7 +1691,7 @@ const addCategory = async (req, res) => {
         defaultImageUrl,
         slug,
         description || null,
-        is_active,
+        is_active === "1" ? true : false,
         sort_order,
         meta_title || null,
         meta_description || null,
@@ -1978,6 +1975,12 @@ const updateCategory = async (req, res) => {
 
     for (const [key, value] of Object.entries(modifiedInput)) {
       if (key === "id" || key === "categoryImage") continue;
+
+      if (key === "status") {
+        updateQuery.push(`is_active = ?`);
+        updateValues.push(value);
+        continue;
+      }
 
       updateQuery.push(`${key} = ?`);
       updateValues.push(value);

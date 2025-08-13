@@ -594,28 +594,31 @@ const getOrderByShopID = async (req, res) => {
     const search = req.query.search || "";
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
+    const status = req.query.status;
     const offset = (page - 1) * limit;
 
-    // --- Count total for pagination
-    const [countRows] = await connection.execute(
-      `
+    const validStatuses = ["pending", "shipped", "delivered", "cancelled"];
+
+    let countQuery = `
       SELECT COUNT(*) AS total
-      FROM orders o
-      JOIN users u ON o.user_id = u.id
-      WHERE o.shop_id = ?
-      AND (
-        o.order_number LIKE ? OR
-        u.full_name LIKE ?
-      )
-    `,
-      [shop_id[0].id, `%${search}%`, `%${search}%`]
-    );
+      FROM orders o 
+      JOIN users u ON o.user_id = u.id where o.shop_id = ? AND (o.order_number LIKE ? OR u.full_name LIKE ?)
+    `;
+    if (validStatuses.includes(status)) {
+      countQuery += ` AND o.order_status = '${status}'`;
+    }
+
+    // --- Count total for pagination
+    const [countRows] = await connection.execute(countQuery, [
+      shop_id[0].id,
+      `%${search}%`,
+      `%${search}%`,
+    ]);
     const total = countRows[0].total;
     const totalPages = Math.ceil(total / limit);
 
     // --- Main paginated order query
-    const [orders] = await connection.query(
-      `
+    let orderQuery = `
       SELECT 
         o.id,
         o.order_number,
@@ -649,19 +652,23 @@ const getOrderByShopID = async (req, res) => {
 
         u.full_name AS customer_name,
         u.email AS customer_email,
+        u.phone AS customer_phone
       FROM orders o
       JOIN users u ON o.user_id = u.id
-      WHERE o.shop_id = ?
-        AND (
-          o.order_number LIKE ?
-          OR u.full_name LIKE ?
-        )
-      ORDER BY o.order_date DESC
-      LIMIT ?
-      OFFSET ?
-      `,
-      [shop_id[0].id, `%${search}%`, `%${search}%`, limit, offset]
-    );
+      WHERE o.shop_id = ? AND (o.order_number LIKE ? OR u.full_name LIKE ?)
+    `;
+    if (validStatuses.includes(status)) {
+      orderQuery += ` AND o.order_status = '${status}'`;
+    }
+    orderQuery += ` ORDER BY o.order_date DESC LIMIT ? OFFSET ?`;
+
+    const [orders] = await connection.query(orderQuery, [
+      shop_id[0].id,
+      `%${search}%`,
+      `%${search}%`,
+      limit,
+      offset,
+    ]);
 
     // --- Get all order items for these orders
     const orderIds = orders.map((order) => order.id);
@@ -758,6 +765,7 @@ const getOrderByShopID = async (req, res) => {
     return res.status(200).json({
       success: true,
       orders: response,
+      message: "Orders fetched successfully",
       pagination: {
         total,
         page,
@@ -769,7 +777,7 @@ const getOrderByShopID = async (req, res) => {
     console.error("Error fetching orders:", err);
     return res
       .status(500)
-      .json({ success: false, message: "Failed to fetch orders" });
+      .json({ success: false, error: "Failed to fetch orders" });
   } finally {
     if (connection) connection.release();
   }
