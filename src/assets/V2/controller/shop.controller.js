@@ -1582,9 +1582,18 @@ const getPaginatedproducts = async (req, res) => {
         short_description: product.short_description || "",
         long_description: product.long_description || "",
         warehouse_location: product.warehouse_location || "",
-        tags: product.tags || [],
-        attributes: product.attributes || [],
-        specifications: product.specifications || [],
+        tags:
+          (typeof product.tags === "string"
+            ? JSON.parse(product.tags)
+            : product.tags) || [],
+        attributes:
+          (typeof product.attributes === "string"
+            ? JSON.parse(product.attributes)
+            : product.attributes) || {},
+        specifications:
+          (typeof product.specifications === "string"
+            ? JSON.parse(product.specifications)
+            : product.specifications) || {},
         is_featured: product.is_featured || false,
         is_new_arrival: product.is_new_arrival || false,
         is_best_seller: product.is_best_seller || false,
@@ -1592,11 +1601,22 @@ const getPaginatedproducts = async (req, res) => {
         product_type: product.product_type || "",
         meta_title: product.meta_title || "",
         meta_description: product.meta_description || "",
-        custom_fields: product.custom_fields || [],
+        custom_fields:
+          (typeof product.custom_fields === "string"
+            ? JSON.parse(product.custom_fields)
+            : product.custom_fields) || {},
         created_at: product.created_at,
         updated_at: product.updated_at,
         categories: categoryMap[product.id] || [],
-        variants: variants, // remaining variants only
+        variants: Object.entries(variants).reduce((acc, [key, value]) => {
+          if (key === "gallery_images") {
+            value = typeof value === "string" ? JSON.parse(value) : value;
+          }
+          return {
+            ...acc,
+            [key]: value,
+          };
+        }, {}), // remaining variants only
       };
     });
 
