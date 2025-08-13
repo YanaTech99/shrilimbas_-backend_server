@@ -9,29 +9,117 @@ const ROOT_DIR = path.resolve(__dirname, "../../../");
 
 const formatCurrency = (amount) => `₹${(amount || 0).toFixed(2)}`;
 
-const drawTableRow = (doc, y, row, isHeader = false) => {
-  const rowHeight = 25;
-  const columns = [
-    { text: row.product, x: 50, width: 120 },
-    { text: row.variant, x: 170, width: 90 },
-    { text: row.qty, x: 260, width: 40 },
-    { text: row.unit, x: 300, width: 60 },
-    { text: row.discount, x: 360, width: 60 },
-    { text: row.tax, x: 420, width: 60 },
-    { text: row.total, x: 480, width: 60 },
+const drawHorizontalLine = (doc, y, startX = 50, endX = 545) => {
+  doc.moveTo(startX, y).lineTo(endX, y).stroke();
+};
+
+const drawItemsTable = (doc, items, startY) => {
+  let currentY = startY;
+  const tableStartX = 50;
+  const tableWidth = 495;
+  const rowHeight = 35;
+
+  // Table headers
+  const headers = [
+    { text: "S.No", x: tableStartX, width: 40 },
+    { text: "Item Name", x: tableStartX + 40, width: 200 },
+    { text: "Price", x: tableStartX + 240, width: 80 },
+    { text: "Qty", x: tableStartX + 320, width: 60 },
+    { text: "Tax", x: tableStartX + 380, width: 60 },
+    { text: "Total", x: tableStartX + 440, width: 55 },
   ];
 
-  doc.rect(50, y, 490, rowHeight).stroke();
+  // Draw header background (dark)
+  doc
+    .rect(tableStartX, currentY, tableWidth, rowHeight)
+    .fillAndStroke("#333333", "#333333");
 
-  columns.forEach(({ text, x, width }) => {
-    doc.rect(x, y, width, rowHeight).stroke();
-    doc
-      .font("Helvetica" + (isHeader ? "-Bold" : ""))
-      .fontSize(9)
-      .text(text, x + 5, y + 8, { width: width - 10, align: "left" });
+  // Header text (white)
+  doc.fillColor("#ffffff").fontSize(10).font("Helvetica-Bold");
+
+  headers.forEach((header) => {
+    const textAlign = ["Price", "Qty", "Tax", "Total"].includes(header.text)
+      ? "center"
+      : "left";
+    doc.text(header.text, header.x + 5, currentY + 12, {
+      width: header.width - 10,
+      align: textAlign,
+    });
   });
 
-  return y + rowHeight;
+  currentY += rowHeight;
+
+  // Draw items
+  doc.fillColor("#000000").font("Helvetica").fontSize(10);
+
+  items.forEach((item, index) => {
+    const variant = item.variant || {};
+    const variantDetails = [variant.color, variant.size, variant.material]
+      .filter(Boolean)
+      .join(" / ");
+
+    const itemName = variantDetails
+      ? `${item.name} (${variantDetails})`
+      : item.name;
+
+    // Alternate row background
+    if (index % 2 === 0) {
+      doc
+        .rect(tableStartX, currentY, tableWidth, rowHeight)
+        .fillAndStroke("#f8f8f8", "#cccccc");
+    } else {
+      doc.rect(tableStartX, currentY, tableWidth, rowHeight).stroke("#cccccc");
+    }
+
+    doc.fillColor("#000000");
+
+    // Item details
+    const rowData = [
+      {
+        text: (index + 1).toString(),
+        x: tableStartX,
+        width: 40,
+        align: "center",
+      },
+      { text: itemName, x: tableStartX + 40, width: 200, align: "left" },
+      {
+        text: formatCurrency(item.price_per_unit),
+        x: tableStartX + 240,
+        width: 80,
+        align: "center",
+      },
+      {
+        text: item.quantity.toString(),
+        x: tableStartX + 320,
+        width: 60,
+        align: "center",
+      },
+      {
+        text: formatCurrency(item.tax_per_unit),
+        x: tableStartX + 380,
+        width: 60,
+        align: "center",
+      },
+      {
+        text: formatCurrency(item.total),
+        x: tableStartX + 440,
+        width: 55,
+        align: "center",
+      },
+    ];
+
+    rowData.forEach((data) => {
+      doc.text(data.text, data.x + 5, currentY + 12, {
+        width: data.width - 10,
+        align: data.align,
+        lineGap: 3,
+      });
+    });
+
+    currentY += rowHeight;
+  });
+
+  return currentY;
 };
 
 const generateInvoicePDF = async (orderData, outputFileName) => {
@@ -54,105 +142,138 @@ const generateInvoicePDF = async (orderData, outputFileName) => {
         price_summary: s,
       } = orderData;
 
-      // HEADER
-      doc.fontSize(20).text("TAX INVOICE", { align: "center" }).moveDown();
-      doc
-        .fontSize(10)
-        .text(`Order Number: ${orderData.order_number}`)
-        .text(`Order ID: ${orderData.order_id}`)
-        .text(`Date: ${orderData.date}  Time: ${orderData.time}`)
-        .text(`Payment Method: ${orderData.payment_method}`)
-        .text(`Payment Status: ${orderData.payment_status}`)
-        .moveDown();
+      let currentY = 50;
 
-      // CUSTOMER INFO
-      doc
-        .fontSize(12)
-        .text("Customer Details", { underline: true })
-        .moveDown(0.5);
-      doc
-        .fontSize(10)
-        .text(`Name: ${customer.name}`)
-        .text(`Email: ${customer.email}`)
-        .text(`Phone: ${customer.phone}`)
-        .text(`Alternate Phone: ${customer.alternate_phone || "N/A"}`)
-        .moveDown();
+      // TOP SECTION WITH LOGO AND INVOICE TITLE
+      // Company logo placeholder (diamond shape)
+      doc.rect(50, currentY, 20, 20).fillAndStroke("#333333", "#333333");
 
-      // DELIVERY
+      // Company name
       doc
-        .fontSize(12)
-        .text("Delivery Address", { underline: true })
-        .moveDown(0.5);
+        .fillColor("#000000")
+        .fontSize(14)
+        .font("Helvetica-Bold")
+        .text("Brand Name", 75, currentY + 2);
+
+      doc
+        .fontSize(8)
+        .font("Helvetica")
+        .text("TRADING SINCE 1987", 75, currentY + 18);
+
+      // Yellow bar and INVOICE title
+      doc.rect(50, currentY + 40, 200, 8).fillAndStroke("#FFD700", "#FFD700");
+
+      doc.rect(450, currentY + 40, 95, 8).fillAndStroke("#FFD700", "#FFD700");
+
+      doc
+        .fillColor("#000000")
+        .fontSize(28)
+        .font("Helvetica-Bold")
+        .text("INVOICE", 280, currentY + 35);
+
+      currentY += 75;
+
+      // INVOICE TO SECTION
+      doc.fontSize(12).font("Helvetica-Bold").text("Invoice to:", 50, currentY);
+
+      // Invoice details on the right
       doc
         .fontSize(10)
-        .text(d.address)
-        .text(`${d.city}, ${d.state}, ${d.country}, ${d.postal_code}`)
-        .text(`Instructions: ${d.instructions || "N/A"}`)
-        .moveDown();
+        .font("Helvetica")
+        .text("Invoice#", 400, currentY)
+        .text("Date", 400, currentY + 30);
+
+      doc
+        .font("Helvetica-Bold")
+        .text(orderData.order_number || orderData.order_id, 460, currentY)
+        .text(
+          orderData.date || new Date().toLocaleDateString("en-IN"),
+          460,
+          currentY + 30
+        );
+
+      currentY += 25;
+
+      // Customer details
+      doc.fontSize(10).font("Helvetica-Bold").text(customer.name, 50, currentY);
+
+      currentY += 15;
+
+      doc
+        .font("Helvetica")
+        .text(`${d.address}`, 50, currentY)
+        .text(`${d.city}, ${d.state}`, 50, currentY + 15)
+        .text(`${d.postal_code}`, 50, currentY + 30);
+
+      currentY += 60;
 
       // ITEMS TABLE
-      doc.fontSize(12).text("Items", { underline: true }).moveDown(0.5);
+      currentY = drawItemsTable(doc, items, currentY);
+      currentY += 20;
 
-      let y = doc.y;
-      y = drawTableRow(
-        doc,
-        y,
-        {
-          product: "Product",
-          variant: "Variant",
-          qty: "Qty",
-          unit: "Unit ₹",
-          discount: "Disc ₹",
-          tax: "Tax ₹",
-          total: "Total ₹",
-        },
-        true
-      );
-
-      items.forEach((item) => {
-        const variant = item.variant || {};
-        const variantDetails = [variant.color, variant.size, variant.material]
-          .filter(Boolean)
-          .join(" / ");
-
-        y = drawTableRow(doc, y, {
-          product: item.name,
-          variant: variantDetails || "-",
-          qty: item.quantity.toString(),
-          unit: formatCurrency(item.price_per_unit),
-          discount: formatCurrency(item.discount_per_unit),
-          tax: formatCurrency(item.tax_per_unit),
-          total: formatCurrency(item.total),
-        });
-      });
-
-      // SUMMARY
-      doc
-        .moveDown(2)
-        .fontSize(12)
-        .text("Price Summary", { underline: true })
-        .moveDown(0.5);
+      // Terms & Conditions
       doc
         .fontSize(10)
-        .text(`Subtotal: ${formatCurrency(s.sub_total)}`, { align: "right" })
-        .text(`Discount: -${formatCurrency(s.discount)}`, { align: "right" })
-        .text(`Tax: ${formatCurrency(s.tax)}`, { align: "right" })
-        .text(`Shipping: ${formatCurrency(s.shipping_fee)}`, { align: "right" })
         .font("Helvetica-Bold")
-        .text(`Total: ${formatCurrency(s.total)}`, { align: "right" })
-        .font("Helvetica");
+        .text("Terms & Conditions", 50, currentY + 25);
 
-      // NOTES
-      if (orderData.notes) {
-        doc.moveDown().fontSize(10).text(`Notes: ${orderData.notes}`);
-      }
-
-      // FOOTER
       doc
-        .moveDown(3)
+        .fontSize(9)
+        .font("Helvetica")
+        .text(
+          "Lorem ipsum dolor sit amet, consectetur adipiscing",
+          50,
+          currentY + 42
+        )
+        .text("elit, Fusce dignissim pretium consectetur.", 50, currentY + 55);
+
+      // Price Summary (right side)
+      const summaryStartX = 350;
+      let summaryY = currentY;
+
+      // Sub Total
+      doc
         .fontSize(10)
-        .text("Thank you for your purchase!", { align: "center" })
-        .text("For support, email support@example.com", { align: "center" });
+        .font("Helvetica")
+        .text("Sub Total:", summaryStartX, summaryY)
+        .text(formatCurrency(s.sub_total), summaryStartX + 100, summaryY, {
+          align: "right",
+          width: 80,
+        });
+
+      // Tax
+      doc
+        .text("Tax:", summaryStartX, summaryY + 18)
+        .text(`${s.tax.toFixed(1)}`, summaryStartX + 100, summaryY + 18, {
+          align: "right",
+          width: 80,
+        });
+
+      // Total with yellow background
+      doc
+        .rect(summaryStartX, summaryY + 45, 145, 25)
+        .fillAndStroke("#FFD700", "#FFD700");
+
+      doc
+        .fillColor("#000000")
+        .fontSize(12)
+        .font("Helvetica-Bold")
+        .text("Total:", summaryStartX + 10, summaryY + 53)
+        .text(formatCurrency(s.total), summaryStartX + 65, summaryY + 53, {
+          align: "right",
+          width: 70,
+        });
+
+      // Thank you message
+      doc
+        .fontSize(18)
+        .font("Helvetica-Bold")
+        .text("Thank you for your business!", 50, doc.page.height - 180, {
+          align: "center",
+        });
+
+      // Bottom border line
+      drawHorizontalLine(doc, doc.page.height - 50, 50, 545);
 
       doc.end();
 
