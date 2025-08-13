@@ -1608,15 +1608,15 @@ const getPaginatedproducts = async (req, res) => {
         created_at: product.created_at,
         updated_at: product.updated_at,
         categories: categoryMap[product.id] || [],
-        variants: Object.entries(variants).reduce((acc, [key, value]) => {
-          if (key === "gallery_images") {
-            value = typeof value === "string" ? JSON.parse(value) : value;
-          }
+        variants: variants.map((variant) => {
           return {
-            ...acc,
-            [key]: value,
+            ...variant,
+            gallery_images:
+              typeof variant.gallery_images === "string"
+                ? JSON.parse(variant.gallery_images)
+                : variant.gallery_images,
           };
-        }, {}), // remaining variants only
+        }), // remaining variants only
       };
     });
 
