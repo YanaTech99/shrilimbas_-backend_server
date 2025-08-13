@@ -12,6 +12,7 @@ import {
   productImageFolder,
 } from "../../../constants.js";
 import { getPublicIdFromUrl } from "../../utils/extractPublicID.util.js";
+import { removeLocalFiles } from "../../helper/removeLocalFiles.js";
 
 const updateShop = async (req, res) => {
   const pool = pools[req.tenantId];
@@ -366,8 +367,10 @@ const addProducts = async (req, res) => {
   const tenantId = req.tenantId;
   const pool = pools[tenantId];
   const { id: user_id, user_type } = req.user;
+  const productFilesArray = req.files || [];
 
   if (user_type !== "VENDOR") {
+    removeLocalFiles(productFilesArray);
     return res.status(403).json({
       success: false,
       message: "Forbidden: Only vendors can add products.",
@@ -380,12 +383,14 @@ const addProducts = async (req, res) => {
   );
 
   if (shops.length === 0) {
+    removeLocalFiles(productFilesArray);
     return res.status(404).json({
       success: false,
       message: "Active shop not found for this vendor.",
     });
   }
 
+  // console.log(req.body);
   const shop_id = shops[0].id;
   const formattedData =
     typeof req.body.product === "string"
@@ -399,7 +404,6 @@ const addProducts = async (req, res) => {
       : product.variants;
 
   // Group multer.any() files by fieldname
-  const productFilesArray = req.files || [];
   const productFiles = {};
   for (const file of productFilesArray) {
     if (!productFiles[file.fieldname]) {
@@ -411,6 +415,7 @@ const addProducts = async (req, res) => {
   const requiredFields = ["product_name", "sku", "category_ids", "variants"];
   for (const field of requiredFields) {
     if (!product[field]) {
+      removeLocalFiles(productFilesArray);
       return res.status(400).json({
         success: false,
         message: `Missing required field: ${field}`,
@@ -459,6 +464,8 @@ const addProducts = async (req, res) => {
           typeof product[field] === "object"
             ? JSON.stringify(product[field])
             : {};
+      } else if (field === "is_active") {
+        value = parseInt(product[field]);
       } else {
         value = product[field];
       }
@@ -486,8 +493,10 @@ const addProducts = async (req, res) => {
     // Insert product categories
     let categoryIds = [];
     if (Array.isArray(product.category_ids)) {
+      console.log("array", product.category_ids);
       categoryIds = product.category_ids.map(Number);
     } else if (typeof product.category_ids === "string") {
+      console.log(product.category_ids);
       categoryIds = product.category_ids
         .split(",")
         .map((id) => parseInt(id.trim()));
@@ -501,7 +510,6 @@ const addProducts = async (req, res) => {
         categoryValues.push(productId, categoryId, 0);
         placeholders.push("(?, ?, ?)");
       }
-
       const categorySql = `
         INSERT INTO product_categories (product_id, category_id, sort_order)
         VALUES ${placeholders.join(", ")}
@@ -680,7 +688,7 @@ const updateProduct = async (req, res) => {
   }
 
   const [shopRows] = await pool.execute(
-    "SELECT id FROM shops WHERE user_id = ? AND status = 'ACTIVE' LIMIT 1",
+    "SELECT id FROM shops WHERE user_id = ? AND is_active = true LIMIT 1",
     [user_id]
   );
 
@@ -1565,39 +1573,33 @@ const getPaginatedproducts = async (req, res) => {
         product_name: product.product_name,
         slug: product.slug,
         sku: product.sku,
-        thumbnail: mainVariant?.thumbnail,
-        gallery_images:
-          typeof mainVariant?.gallery_images === "string"
-            ? JSON.parse(mainVariant.gallery_images)
-            : mainVariant?.gallery_images,
-        selling_price: Number(mainVariant?.selling_price),
-        base_price: Number(mainVariant?.base_price),
-        cost_price: Number(mainVariant?.cost_price),
-        stock: product.stock_quantity,
-        tax: product.tax_percentage,
-        stock_alert_at: product.min_stock_alert,
+        total_stock: product.stock_quantity,
+        thumbnail: mainVariant.thumbnail,
+        tax_percentage: product.tax_percentage,
+        min_stock_alert: product.min_stock_alert,
         stock_unit: product.stock_unit,
         is_in_stock: product.is_in_stock,
-        hsn: product.hsn_code,
-        barcode: product.barcode,
-        brand: product.brand,
-        status: product.status,
-        short_description: product.short_description,
-        long_description: product.long_description,
-        warehouse_location: product.warehouse_location,
-        tags: product.tags,
-        attributes: product.attributes,
-        is_featured: product.is_featured,
-        is_new_arrival: product.is_new_arrival,
-        is_best_seller: product.is_best_seller,
-        product_type: product.product_type,
-        meta_title: product.meta_title,
-        meta_description: product.meta_description,
-        custom_fields: product.custom_fields,
+        hsn_code: product.hsn_code || "",
+        barcode: product.barcode || "",
+        brand: product.brand || "",
+        status: product.status || "",
+        short_description: product.short_description || "",
+        long_description: product.long_description || "",
+        warehouse_location: product.warehouse_location || "",
+        tags: product.tags || [],
+        attributes: product.attributes || [],
+        specifications: product.specifications || [],
+        is_featured: product.is_featured || false,
+        is_new_arrival: product.is_new_arrival || false,
+        is_best_seller: product.is_best_seller || false,
+        product_type: product.product_type || "",
+        meta_title: product.meta_title || "",
+        meta_description: product.meta_description || "",
+        custom_fields: product.custom_fields || [],
         created_at: product.created_at,
         updated_at: product.updated_at,
         categories: categoryMap[product.id] || [],
-        variants: otherVariants, // remaining variants only
+        variants: variants, // remaining variants only
       };
     });
 
@@ -1762,7 +1764,7 @@ const getPaginatedCategories = async (req, res) => {
     const {
       page = 1,
       limit = 10,
-      status = true,
+      status = "active",
       title,
       parent_id,
       search,
@@ -1777,7 +1779,7 @@ const getPaginatedCategories = async (req, res) => {
     // Filters
     if (status) {
       whereClauses.push("is_active = ?");
-      values.push(status);
+      values.push(status === "active" ? true : false);
     }
 
     if (title) {
@@ -1804,6 +1806,8 @@ const getPaginatedCategories = async (req, res) => {
       values.push(shop_id);
     }
 
+    whereClauses.push("is_deleted = false");
+
     const whereSQL = whereClauses.length
       ? `WHERE ${whereClauses.join(" AND ")}`
       : "";
@@ -1815,6 +1819,13 @@ const getPaginatedCategories = async (req, res) => {
     );
     const total = countResult[0].total;
     const totalPages = Math.ceil(total / parseInt(limit));
+
+    if (total === 0) {
+      return res.status(200).json({
+        success: true,
+        message: "No categories found.",
+      });
+    }
 
     // Fetch paginated categories
     const [categories] = await pool.execute(
@@ -1857,7 +1868,7 @@ const deleteCategory = async (req, res) => {
   }
 
   const [shops] = await pool.execute(
-    "SELECT id FROM shops WHERE user_id = ? AND status = 'ACTIVE' LIMIT 1",
+    "SELECT id FROM shops WHERE user_id = ? AND is_active = true LIMIT 1",
     [user_id]
   );
 
@@ -1918,10 +1929,13 @@ const deleteCategory = async (req, res) => {
 };
 
 const updateCategory = async (req, res) => {
-  const pool = pools[req.tenantId];
+  const tenantId = req.tenantId;
+  const pool = pools[tenantId];
   const { id: user_id, user_type } = req.user;
+  const image = req.file || null;
 
   if (user_type !== "VENDOR") {
+    removeLocalFiles(image);
     return res.status(403).json({
       success: false,
       message: "Forbidden: Only vendors can add products.",
@@ -1929,11 +1943,12 @@ const updateCategory = async (req, res) => {
   }
 
   const [shops] = await pool.execute(
-    "SELECT id FROM shops WHERE user_id = ? AND status = 'ACTIVE' LIMIT 1",
+    "SELECT id FROM shops WHERE user_id = ? AND is_active = true LIMIT 1",
     [user_id]
   );
 
   if (shops.length === 0) {
+    removeLocalFiles(image);
     return res.status(404).json({
       success: false,
       message: "Active shop not found for this vendor.",
@@ -1950,6 +1965,7 @@ const updateCategory = async (req, res) => {
   ]);
 
   if (!category || category.length === 0) {
+    removeLocalFiles(image);
     return res.status(404).json({
       success: false,
       message: "Category not found.",
@@ -1958,32 +1974,51 @@ const updateCategory = async (req, res) => {
 
   try {
     const updateQuery = [];
-    const updatevValues = [];
+    const updateValues = [];
 
     for (const [key, value] of Object.entries(modifiedInput)) {
-      if (key === "id") continue;
+      if (key === "id" || key === "categoryImage") continue;
+
       updateQuery.push(`${key} = ?`);
-      updatevValues.push(value);
+      updateValues.push(value);
     }
 
-    if (updateQuery.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: "No fields to update.",
-      });
+    updateValues.push(id);
+
+    if (updateQuery.length > 0) {
+      const [result] = await pool.query(
+        `UPDATE categories SET ${updateQuery.join(", ")} WHERE id = ?`,
+        updateValues
+      );
+
+      if (result.affectedRows === 0) {
+        return res.status(500).json({
+          success: false,
+          error: "Failed to update category.",
+        });
+      }
     }
 
-    console.log(updateQuery);
-    const [result] = await pool.query(
-      `UPDATE categories SET ${updateQuery.join(", ")} WHERE id = ?`,
-      [updatevValues, id]
-    );
+    if (image && image !== null) {
+      const uploadResult = await uploadImageToCloudinary(
+        image.path,
+        tenantId,
+        categoryImageFolder
+      );
+      if (uploadResult) {
+        await pool.execute("UPDATE categories SET image_url = ? WHERE id = ?", [
+          uploadResult.secure_url,
+          id,
+        ]);
+      } else {
+        throw new Error("Failed to upload image to Cloudinary.");
+      }
+    }
 
-    if (result.affectedRows === 0) {
-      return res.status(500).json({
-        success: false,
-        message: "Failed to update category.",
-      });
+    // Delete the old images from Cloudinary
+    if (category[0].image_url !== defaultImageUrl) {
+      const public_id = getPublicIdFromUrl(category[0].image_url);
+      await deleteFromCloudinary(public_id);
     }
 
     return res.status(200).json({
@@ -1992,12 +2027,15 @@ const updateCategory = async (req, res) => {
       category_id: id,
     });
   } catch (error) {
-    console.error("Error updating category:", error.message);
+    console.error("Error updating category:", error);
     return res.status(500).json({
       success: false,
-      message: "Failed to update category.",
-      error: error.message,
+      error: "Failed to update category.",
     });
+  } finally {
+    if (image && image !== null) {
+      removeLocalFiles(image);
+    }
   }
 };
 
