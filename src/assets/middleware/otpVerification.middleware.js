@@ -1,9 +1,26 @@
 import bcrypt from "bcrypt";
-import pool from "../db/index.js";
+import pools from "../db/index.js";
 
 const verifyOTP = async (req, res, next) => {
   const tenantId = req.tenantId;
-  const { phone_number, otp_code } = req.body;
+  const pool = pools[req.tenantId];
+  const { phone_number, otp_code, user_type } = req.body;
+
+  // temporary logic for testing
+  const [existingUser] = await pool.execute(
+    `
+    SELECT user_type FROM users
+    WHERE phone = ?
+    `,
+    [phone_number]
+  );
+
+  if (existingUser.length > 0 && existingUser[0].user_type !== user_type) {
+    return res.status(400).json({
+      success: false,
+      error: "User already exists",
+    });
+  }
 
   if (otp_code === "123456") {
     return next();

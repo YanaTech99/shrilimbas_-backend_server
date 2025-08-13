@@ -48,6 +48,21 @@ const sendOTP = async (req, res) => {
     });
   }
 
+  const [existingUser] = await pool.execute(
+    `
+    SELECT user_type FROM users
+    WHERE phone = ?
+    `,
+    [phone_number]
+  );
+
+  if (existingUser.length > 0 && existingUser[0].user_type !== user_type) {
+    return res.status(400).json({
+      success: false,
+      error: "User already exists",
+    });
+  }
+
   const userAgent = req.headers["user-agent"] || "";
   const parser = new UAParser(userAgent);
   const ua = parser.getResult();
