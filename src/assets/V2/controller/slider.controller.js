@@ -6,12 +6,17 @@ import {
 } from "../../utils/cloudinary.util.js";
 import { sanitizeInput } from "../../utils/validation.util.js";
 import { bannerImageFolder } from "../../../constants.js";
+import { getPublicIdFromUrl } from "../../utils/extractPublicID.util.js";
+import { removeLocalFiles } from "../../helper/removeLocalFiles.js";
 
 const addSlider = async (req, res) => {
   const tenantId = req.tenantId;
   const pool = pools[tenantId];
   const { id: userId, user_type } = req.user;
+  const imageFiles = req.files || [];
+
   if (user_type !== "VENDOR") {
+    removeLocalFiles(imageFiles);
     return res.status(403).json({
       success: false,
       message: "Forbidden: Only vendors can add sliders.",
@@ -22,6 +27,7 @@ const addSlider = async (req, res) => {
     userId,
   ]);
   if (!shopId || !shopId[0]) {
+    removeLocalFiles(imageFiles);
     return res.status(404).json({
       success: false,
       message: "Shop not found for this vendor.",
@@ -29,7 +35,6 @@ const addSlider = async (req, res) => {
   }
 
   const connection = await pool.getConnection();
-  const imageFiles = req.files || [];
   let uploadedImages = [];
 
   try {
@@ -78,6 +83,14 @@ const addSlider = async (req, res) => {
       ]
     );
 
+    if (!sliderResult || !sliderResult.insertId) {
+      await connection.rollback();
+      return res.status(500).json({
+        success: false,
+        message: "Failed to add slider.",
+      });
+    }
+
     const sliderId = sliderResult.insertId;
 
     // check if items is an array or a JSON string
@@ -114,7 +127,7 @@ const addSlider = async (req, res) => {
         [sliderId]
       );
 
-      await connection.execute(
+      const [sliderItemResult] = await connection.execute(
         `INSERT INTO slider_items
             (slider_id, title, subtitle, image_url, link_type, link_reference_id, link_url, sort_order, is_active)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -130,6 +143,10 @@ const addSlider = async (req, res) => {
           item.is_active ?? true,
         ]
       );
+
+      if (!sliderItemResult.affectedRows) {
+        throw new Error("Failed to add slider item.");
+      }
     }
 
     await connection.commit();
@@ -153,11 +170,7 @@ const addSlider = async (req, res) => {
       error: err.message,
     });
   } finally {
-    imageFiles.forEach((file, index) => {
-      if (file.path) {
-        fs.unlinkSync(file.path); // Delete the uploaded image file
-      }
-    });
+    removeLocalFiles(imageFiles);
     connection.release();
   }
 };
@@ -206,9 +219,9 @@ const deleteSlider = async (req, res) => {
       });
     }
 
-    sliderImages.forEach((image) => {
-      const publicId = image.image_url.split("/").pop().split(".")[0];
-      deleteFromCloudinary(publicId);
+    sliderImages.forEach(async (image) => {
+      const publicId = getPublicIdFromUrl(image.image_url);
+      await deleteFromCloudinary(publicId);
     });
 
     return res.status(200).json({
@@ -274,9 +287,14 @@ const getSlider = async (req, res) => {
   whereClause.push(`shop_id = '${shopId[0].id}'`);
 
   const whereClauseString = whereClause.join(" AND ");
+
+  // join slider with slider items
   const [result] = await pool.query(
-    `SELECT * FROM sliders WHERE ${whereClauseString}`
+    `SELECT sliders.*, slider_items.* FROM sliders
+    JOIN slider_items ON sliders.id = slider_items.slider_id
+    WHERE ${whereClauseString}`
   );
+
   if (result.length === 0) {
     return res.status(404).json({
       success: false,
@@ -292,12 +310,16 @@ const getSlider = async (req, res) => {
 };
 
 const updateSlider = async (req, res) => {
-  const pool = pools[req.tenantId];
+  const tenantId = req.tenantId;
+  const pool = pools[tenantId];
   const { id: user_id, user_type } = req.user;
+  const imageFiles = req.files || [];
+
   if (user_type !== "VENDOR") {
+    removeLocalFiles(imageFiles);
     return res.status(403).json({
       success: false,
-      message: "Forbidden: Only vendors can add sliders.",
+      error: "Forbidden: Only vendors can add sliders.",
     });
   }
 
@@ -305,12 +327,17 @@ const updateSlider = async (req, res) => {
     user_id,
   ]);
   if (!shopId || !shopId[0]) {
+    removeLocalFiles(imageFiles);
     return res.status(404).json({
       success: false,
-      message: "Shop not found for this vendor.",
+      error: "Shop not found for this vendor.",
     });
   }
 
+  req.body.items =
+    typeof req.body.items === "string"
+      ? JSON.parse(req.body.items)
+      : req.body.items;
   const modifiedInput = sanitizeInput(req.body);
   const {
     sliderId,
@@ -325,15 +352,19 @@ const updateSlider = async (req, res) => {
     items = [],
   } = modifiedInput;
 
+  const uploadedImages = [];
+  const oldImages = [];
+
   const [slider] = await pool.query(
     `SELECT * FROM sliders WHERE id = ? AND shop_id = ?`,
     [sliderId, shopId[0].id]
   );
 
   if (!slider.length) {
+    removeLocalFiles(imageFiles);
     return res.status(404).json({
       success: false,
-      message: "Slider not found.",
+      error: "Slider not found.",
     });
   }
 
@@ -360,22 +391,21 @@ const updateSlider = async (req, res) => {
       );
 
       if (result.affectedRows === 0) {
-        client.rollback();
+        await client.rollback();
         return res.status(404).json({
           success: false,
-          message: "Failed to update slider.",
+          error: "Failed to update slider.",
         });
       }
     }
 
     let itemsArray = [];
-
     if (items) {
       itemsArray = typeof items === "string" ? JSON.parse(items) : items;
     }
 
-    if (items.length > 0) {
-      items.forEach(async (item) => {
+    if (itemsArray.length > 0) {
+      for (let index = 0; index < itemsArray.length; index++) {
         const {
           id,
           title,
@@ -384,10 +414,14 @@ const updateSlider = async (req, res) => {
           link_url,
           is_active,
           link_reference_id,
-        } = item;
+        } = itemsArray[index];
+
+        const image = imageFiles.find(
+          (file) => file.fieldname === `slider_image_${index + 1}`
+        );
 
         const [sliderItems] = await client.query(
-          `SELECT id FROM slider_items WHERE id = ? AND slider_id = ?`,
+          `SELECT id, image_url FROM slider_items WHERE id = ? AND slider_id = ?`,
           [id, sliderId]
         );
 
@@ -395,11 +429,12 @@ const updateSlider = async (req, res) => {
           await client.rollback();
           return res.status(404).json({
             success: false,
-            message: "Slider item not found.",
+            error: "Slider item not found.",
           });
         }
 
         const updateClause = [];
+        if (image) oldImages.push(sliderItems[0].image_url);
 
         if (title) updateClause.push(`title = '${title}'`);
         if (subtitle) updateClause.push(`subtitle = '${subtitle}'`);
@@ -420,12 +455,39 @@ const updateSlider = async (req, res) => {
             await client.rollback();
             return res.status(404).json({
               success: false,
-              message: "Failed to update slider item.",
+              error: "Failed to update slider item.",
             });
           }
         }
-      });
+
+        if (image) {
+          const cloudinaryResult = await uploadImageToCloudinary(
+            image.path,
+            tenantId,
+            bannerImageFolder
+          );
+          const image_url = cloudinaryResult.secure_url;
+          uploadedImages.push(cloudinaryResult.public_id);
+
+          if (image_url) {
+            const [result] = await client.query(
+              `UPDATE slider_items SET image_url = ? WHERE id = ? AND slider_id = ?`,
+              [image_url, id, sliderId]
+            );
+
+            if (result.affectedRows === 0) {
+              throw new Error(`Failed to update slider item ${id + 1}.`);
+            }
+          }
+        }
+      }
     }
+
+    oldImages.forEach(async (image) => {
+      const public_id = getPublicIdFromUrl(image);
+      console.log(public_id);
+      await deleteFromCloudinary(public_id, tenantId);
+    });
 
     client.commit();
 
@@ -441,6 +503,7 @@ const updateSlider = async (req, res) => {
       message: "Failed to update slider.",
     });
   } finally {
+    removeLocalFiles(imageFiles);
     client.release();
   }
 };

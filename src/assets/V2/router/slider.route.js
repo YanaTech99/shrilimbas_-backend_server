@@ -18,6 +18,8 @@ router.route("/deleteSlider").delete(authenticateToken, deleteSlider);
 
 router.route("/getSlider").get(authenticateToken, getSlider);
 
-router.route("/updateSlider").patch(authenticateToken, updateSlider);
+router
+  .route("/updateSlider")
+  .patch(authenticateToken, upload.any(), updateSlider);
 
 export default router;

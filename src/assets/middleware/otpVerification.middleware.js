@@ -24,6 +24,11 @@ const verifyOTP = async (req, res, next) => {
 
   if (otp_code === "123456") {
     return next();
+  } else {
+    return res.status(400).json({
+      success: false,
+      error: "Invalid OTP",
+    });
   }
 
   try {
