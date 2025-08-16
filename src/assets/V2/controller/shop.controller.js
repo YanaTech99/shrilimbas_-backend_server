@@ -1441,7 +1441,7 @@ const getPaginatedproducts = async (req, res) => {
   const {
     page = 1,
     limit = 10,
-    status = false,
+    status = "",
     brand_id,
     category_id,
     search,
@@ -1474,7 +1474,7 @@ const getPaginatedproducts = async (req, res) => {
     // Optional filters
     if (status) {
       filters.push("p.is_active = ?");
-      values.push(status);
+      values.push(status === "active" ? 1 : 0);
     }
 
     if (brand_id) {
@@ -1506,7 +1506,7 @@ const getPaginatedproducts = async (req, res) => {
     );
 
     if (productRows.length === 0) {
-      return res.json({
+      return res.status(200).json({
         success: true,
         message: "No products found.",
         total,
@@ -1780,7 +1780,6 @@ const getPaginatedCategories = async (req, res) => {
   try {
     const {
       page = 1,
-      limit = 10,
       status = "active",
       title,
       parent_id,
@@ -1789,7 +1788,6 @@ const getPaginatedCategories = async (req, res) => {
       order = "DESC",
     } = req.query;
 
-    const offset = (parseInt(page) - 1) * parseInt(limit);
     const whereClauses = [];
     const values = [];
 
@@ -1835,6 +1833,8 @@ const getPaginatedCategories = async (req, res) => {
       values
     );
     const total = countResult[0].total;
+    let limit = req.query.limit ? parseInt(req.query.limit) : total;
+    const offset = (parseInt(page) - 1) * parseInt(limit);
     const totalPages = Math.ceil(total / parseInt(limit));
 
     if (total === 0) {
