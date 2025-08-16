@@ -296,10 +296,10 @@ const getAppData = async (req, res) => {
       success: true,
       message: "App data fetched successfully",
       data: {
-        topSlider: safe(topSlider),
+        topSlider: topSlider || {},
         categories0: safe(allCategories),
-        NewArrivalSlider: safe(midSlider),
-        banner1: safe(bottomSlider),
+        NewArrivalSlider: midSlider || {},
+        banner1: bottomSlider || {},
         featuredProducts: modifiedFeatured,
         bestDeals: modifiedBestDeals,
         homeAppliances: modifiedHomeAppliances,
