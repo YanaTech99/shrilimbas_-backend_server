@@ -2062,6 +2062,95 @@ const updateCategory = async (req, res) => {
   }
 };
 
+const getUsers = async (req, res) => {
+  const pool = pools[req.tenantId];
+  const { id: user_id, user_type } = req.user;
+
+  if (user_type !== "VENDOR") {
+    return res.status(403).json({
+      success: false,
+      message: "Invalid user type.",
+    });
+  }
+
+  const [shops] = await pool.execute(
+    "SELECT id FROM shops WHERE user_id = ? AND is_active = true LIMIT 1",
+    [user_id]
+  );
+
+  if (shops.length === 0) {
+    return res.status(404).json({
+      success: false,
+      message: "Active shop not found for this vendor.",
+    });
+  }
+
+  const shop_id = shops[0].id;
+
+  const { status, search = "" } = req.query;
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 10;
+
+  try {
+    const whereClauses = [];
+    const values = [];
+
+    if (status) {
+      whereClauses.push("is_active = ?");
+      values.push(status === "active" ? 1 : 0);
+    }
+
+    if (search) {
+      whereClauses.push("full_name LIKE ?");
+      values.push(`%${search}%`);
+    }
+
+    whereClauses.push("id != ?");
+    values.push(user_id);
+
+    const whereSQL =
+      whereClauses.length > 0 ? "WHERE " + whereClauses.join(" AND ") : "";
+
+    values.push(limit);
+    values.push((page - 1) * limit);
+
+    const [users] = await pool.query(
+      `SELECT * FROM users ${whereSQL} LIMIT ? OFFSET ?`,
+      values
+    );
+
+    if (users.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "No users found.",
+      });
+    }
+
+    const total = users.length;
+
+    const pagination = {
+      page,
+      limit,
+      total_pages: Math.ceil(total / limit),
+      total,
+    };
+
+    return res.status(200).json({
+      success: true,
+      message: "Users fetched successfully.",
+      users,
+      pagination,
+    });
+  } catch (error) {
+    console.error("Error fetching users:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch users.",
+      error: error.message,
+    });
+  }
+};
+
 export {
   updateShop,
   updateAddress,
@@ -2077,4 +2166,5 @@ export {
   updateCategory,
   deleteVariant,
   addVariant,
+  getUsers,
 };
