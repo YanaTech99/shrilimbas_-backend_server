@@ -8,6 +8,7 @@ import { sanitizeInput } from "../../utils/validation.util.js";
 import { bannerImageFolder } from "../../../constants.js";
 import { getPublicIdFromUrl } from "../../utils/extractPublicID.util.js";
 import { removeLocalFiles } from "../../helper/removeLocalFiles.js";
+import { error } from "console";
 
 const addSlider = async (req, res) => {
   const tenantId = req.tenantId;
@@ -19,7 +20,7 @@ const addSlider = async (req, res) => {
     removeLocalFiles(imageFiles);
     return res.status(403).json({
       success: false,
-      message: "Forbidden: Only vendors can add sliders.",
+      error: "Forbidden: Only vendors can add sliders.",
     });
   }
 
@@ -30,7 +31,7 @@ const addSlider = async (req, res) => {
     removeLocalFiles(imageFiles);
     return res.status(404).json({
       success: false,
-      message: "Shop not found for this vendor.",
+      error: "Shop not found for this vendor.",
     });
   }
 
@@ -38,29 +39,32 @@ const addSlider = async (req, res) => {
   let uploadedImages = [];
 
   try {
-    const sliderData = req.body;
+    const sliderData =
+      typeof req.body === "string" ? JSON.parse(req.body) : req.body;
+
     const {
       name,
       position,
-      type,
       autoplay,
-      status = true,
+      is_active = 1,
       start_date,
       end_date,
       items = [],
     } = sliderData;
 
+    const type = JSON.parse(items).length > 1 ? "carousel" : "single";
+
     if (!name || !position) {
       return res.status(400).json({
         success: false,
-        message: "Name and position are required fields.",
+        error: "Name and position are required fields.",
       });
     }
 
     await connection.beginTransaction();
 
     // get max sort order for the slider
-    const [sortOrder] = await pool.execute(
+    const [sortOrder] = await connection.execute(
       "SELECT IFNULL(MAX(sort_order), 0) + 1 AS sort_order FROM sliders WHERE shop_id = ?",
       [shopId[0].id]
     );
@@ -75,7 +79,7 @@ const addSlider = async (req, res) => {
         position,
         type || "single",
         autoplay || 0,
-        status,
+        is_active,
         start_date || new Date(),
         end_date || null,
         sortOrder[0].sort_order || 1,
@@ -87,7 +91,7 @@ const addSlider = async (req, res) => {
       await connection.rollback();
       return res.status(500).json({
         success: false,
-        message: "Failed to add slider.",
+        error: "Failed to add slider.",
       });
     }
 
@@ -111,6 +115,11 @@ const addSlider = async (req, res) => {
         throw new Error(`Image file for item ${i + 1} is required.`);
       }
 
+      if (!item.title) {
+        await connection.rollback();
+        throw new Error(`Title for item ${i + 1} is required.`);
+      }
+
       const imagePath = image.path;
 
       const cloudinaryResult = await uploadImageToCloudinary(
@@ -122,7 +131,7 @@ const addSlider = async (req, res) => {
       uploadedImages.push(cloudinaryResult.public_id);
 
       // max of sort order for slider items
-      const [sortOrder] = await pool.execute(
+      const [sortOrder] = await connection.execute(
         "SELECT IFNULL(MAX(sort_order), 0) + 1 AS sort_order FROM slider_items WHERE slider_id = ?",
         [sliderId]
       );
@@ -133,14 +142,14 @@ const addSlider = async (req, res) => {
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           sliderId,
-          item.title || null,
+          item.title,
           item.subtitle || null,
           image_url || null,
           item.link_type || "none",
           item.link_reference_id || null,
           item.link_url || null,
           sortOrder[0].sort_order || 1,
-          item.is_active ?? true,
+          item.is_active || 1,
         ]
       );
 
@@ -166,8 +175,7 @@ const addSlider = async (req, res) => {
     console.error("Add slider error:", err.message);
     return res.status(500).json({
       success: false,
-      message: "Failed to add slider.",
-      error: err.message,
+      error: "Failed to add slider.",
     });
   } finally {
     removeLocalFiles(imageFiles);
@@ -176,7 +184,8 @@ const addSlider = async (req, res) => {
 };
 
 const deleteSlider = async (req, res) => {
-  const pool = pools[req.tenantId];
+  const tenantId = req.tenantId;
+  const pool = pools[tenantId];
   const { id: userId, user_type } = req.user;
   if (user_type !== "VENDOR") {
     return res.status(403).json({
@@ -264,7 +273,29 @@ const getSlider = async (req, res) => {
     Object.entries(req.query).length !== 0 ? sanitizeInput(req.query) : {};
   const filters = modifiedInput;
 
-  const { position, type, scheduled_only, is_active } = filters;
+  const { position, type, status, search, limit = 10, page = 1 } = filters;
+
+  const validPositions = [
+    "homepage_top",
+    "homepage_middle",
+    "homepage_bottom",
+    "category_top",
+    "category_sidebar",
+    "product_page_top",
+    "cart_page",
+    "checkout_page",
+    "popup",
+    "offer_zone",
+    "search_page",
+    "global_footer",
+  ];
+
+  if (position && validPositions.includes(position) === false) {
+    return res.status(400).json({
+      success: false,
+      message: "Invalid position.",
+    });
+  }
 
   const whereClause = [];
 
@@ -276,35 +307,66 @@ const getSlider = async (req, res) => {
     whereClause.push(`type = '${type}'`);
   }
 
-  if (scheduled_only) {
-    whereClause.push(`scheduled_only = '${scheduled_only}'`);
+  if (status) {
+    whereClause.push(`is_active = '${status === "active" ? 1 : 0}'`);
   }
 
-  if (is_active) {
-    whereClause.push(`is_active = '${is_active}'`);
+  if (search) {
+    whereClause.push(`name LIKE '%${search}%'`);
   }
 
   whereClause.push(`shop_id = '${shopId[0].id}'`);
 
   const whereClauseString = whereClause.join(" AND ");
 
-  // join slider with slider items
-  const [result] = await pool.query(
-    `SELECT sliders.*, slider_items.* FROM sliders
-    JOIN slider_items ON sliders.id = slider_items.slider_id
-    WHERE ${whereClauseString}`
+  // count total results
+  const [countResult] = await pool.query(
+    `SELECT COUNT(*) AS total FROM sliders WHERE ${whereClauseString}`
+  );
+  const total = countResult[0].total;
+  const totalPages = Math.ceil(total / limit);
+
+  const offset = (page - 1) * limit;
+  const [sliders] = await pool.query(
+    `SELECT * FROM sliders WHERE ${whereClauseString} ORDER BY sort_order LIMIT ${limit} OFFSET ${offset}`
   );
 
-  if (result.length === 0) {
+  if (sliders.length === 0) {
     return res.status(404).json({
       success: false,
       error: "Slider not found",
     });
+  }
+
+  // get slider items and add with slider
+  const sliderIds = sliders.map((slider) => slider.id);
+  const [result] = await pool.query(
+    `SELECT * FROM slider_items WHERE slider_id IN (?) AND is_active = true ORDER BY sort_order`,
+    [sliderIds]
+  );
+
+  for (let i = 0; i < sliders.length; i++) {
+    sliders[i].items = result.filter(
+      (item) => item.slider_id === sliders[i].id
+    );
+  }
+
+  if (result.length === 0) {
+    return res.status(404).json({
+      success: false,
+      error: "Sliders not found",
+    });
   } else {
     return res.status(200).json({
       success: true,
-      message: "Slider retrieved successfully",
-      data: result,
+      message: "Sliders fetched successfully",
+      data: sliders,
+      pagination: {
+        total,
+        limit,
+        page,
+        totalPages,
+      },
     });
   }
 };
@@ -340,13 +402,12 @@ const updateSlider = async (req, res) => {
       : req.body.items;
   const modifiedInput = sanitizeInput(req.body);
   const {
-    sliderId,
+    id: sliderId,
     name,
     position,
     type,
     autoplay,
-    status,
-    is_visible,
+    is_active,
     start_date,
     end_date,
     items = [],
@@ -378,8 +439,7 @@ const updateSlider = async (req, res) => {
     if (position) updateClause.push(`position = '${position}'`);
     if (type) updateClause.push(`type = '${type}'`);
     if (autoplay) updateClause.push(`autoplay = '${autoplay}'`);
-    if (status) updateClause.push(`status = '${status}'`);
-    if (is_visible) updateClause.push(`is_visible = '${is_visible}'`);
+    if (is_active) updateClause.push(`is_active = '${is_active}'`);
     if (start_date) updateClause.push(`start_date = '${start_date}'`);
     if (end_date) updateClause.push(`end_date = '${end_date}'`);
 
@@ -420,65 +480,106 @@ const updateSlider = async (req, res) => {
           (file) => file.fieldname === `slider_image_${index + 1}`
         );
 
-        const [sliderItems] = await client.query(
-          `SELECT id, image_url FROM slider_items WHERE id = ? AND slider_id = ?`,
-          [id, sliderId]
-        );
-
-        if (!sliderItems || sliderItems.length === 0) {
-          await client.rollback();
-          return res.status(404).json({
-            success: false,
-            error: "Slider item not found.",
-          });
-        }
-
-        const updateClause = [];
-        if (image) oldImages.push(sliderItems[0].image_url);
-
-        if (title) updateClause.push(`title = '${title}'`);
-        if (subtitle) updateClause.push(`subtitle = '${subtitle}'`);
-        if (link_type) updateClause.push(`link_type = '${link_type}'`);
-        if (link_url) updateClause.push(`link_url = '${link_url}'`);
-        if (is_active) updateClause.push(`is_active = '${is_active}'`);
-        if (link_reference_id)
-          updateClause.push(`link_reference_id = '${link_reference_id}'`);
-
-        if (updateClause.length > 0) {
-          const updateClauseString = updateClause.join(", ");
-          const [result] = await client.query(
-            `UPDATE slider_items SET ${updateClauseString} WHERE id = ? AND slider_id = ?`,
+        if (id) {
+          // Existing item -> UPDATE
+          const [sliderItems] = await client.query(
+            `SELECT id, image_url FROM slider_items WHERE id = ? AND slider_id = ?`,
             [id, sliderId]
           );
 
-          if (result.affectedRows === 0) {
+          if (!sliderItems || sliderItems.length === 0) {
             await client.rollback();
             return res.status(404).json({
               success: false,
-              error: "Failed to update slider item.",
+              error: "Slider item not found.",
             });
           }
-        }
 
-        if (image) {
-          const cloudinaryResult = await uploadImageToCloudinary(
-            image.path,
-            tenantId,
-            bannerImageFolder
-          );
-          const image_url = cloudinaryResult.secure_url;
-          uploadedImages.push(cloudinaryResult.public_id);
+          const updateClause = [];
+          if (image) oldImages.push(sliderItems[0].image_url);
 
-          if (image_url) {
+          if (title) updateClause.push(`title = '${title}'`);
+          if (subtitle) updateClause.push(`subtitle = '${subtitle}'`);
+          if (link_type) updateClause.push(`link_type = '${link_type}'`);
+          if (link_url) updateClause.push(`link_url = '${link_url}'`);
+          if (is_active !== undefined)
+            updateClause.push(`is_active = '${is_active}'`);
+          if (link_reference_id)
+            updateClause.push(`link_reference_id = '${link_reference_id}'`);
+
+          if (updateClause.length > 0) {
+            const updateClauseString = updateClause.join(", ");
             const [result] = await client.query(
-              `UPDATE slider_items SET image_url = ? WHERE id = ? AND slider_id = ?`,
-              [image_url, id, sliderId]
+              `UPDATE slider_items SET ${updateClauseString} WHERE id = ? AND slider_id = ?`,
+              [id, sliderId]
             );
 
             if (result.affectedRows === 0) {
-              throw new Error(`Failed to update slider item ${id + 1}.`);
+              await client.rollback();
+              return res.status(404).json({
+                success: false,
+                error: "Failed to update slider item.",
+              });
             }
           }
+
+          if (image) {
+            const cloudinaryResult = await uploadImageToCloudinary(
+              image.path,
+              tenantId,
+              bannerImageFolder
+            );
+            const image_url = cloudinaryResult.secure_url;
+            uploadedImages.push(cloudinaryResult.public_id);
+
+            if (image_url) {
+              await client.query(
+                `UPDATE slider_items SET image_url = ? WHERE id = ? AND slider_id = ?`,
+                [image_url, id, sliderId]
+              );
+            }
+          }
+        } else {
+          // New item -> INSERT
+          let image_url = null;
+          if (image) {
+            const cloudinaryResult = await uploadImageToCloudinary(
+              image.path,
+              tenantId,
+              bannerImageFolder
+            );
+            image_url = cloudinaryResult.secure_url;
+            uploadedImages.push(cloudinaryResult.public_id);
+          }
+
+          const [insertResult] = await client.query(
+            `INSERT INTO slider_items 
+        (slider_id, title, subtitle, link_type, link_url, is_active, link_reference_id, image_url) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              sliderId,
+              title || "",
+              subtitle || "",
+              link_type || "none",
+              link_url || "",
+              is_active !== undefined ? is_active : 1,
+              link_reference_id || null,
+              image_url,
+            ]
+          );
+
+          if (insertResult.affectedRows === 0) {
+            await client.rollback();
+            return res.status(500).json({
+              success: false,
+              error: `Failed to add new banner ${index}.`,
+            });
+          }
+
+          await client.query(
+            `UPDATE sliders SET type = 'carousel' WHERE id = ?`,
+            [sliderId]
+          );
         }
       }
     }
@@ -489,7 +590,7 @@ const updateSlider = async (req, res) => {
       await deleteFromCloudinary(public_id, tenantId);
     });
 
-    client.commit();
+    await client.commit();
 
     return res.status(200).json({
       success: true,

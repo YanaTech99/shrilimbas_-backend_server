@@ -10,9 +10,7 @@ import { upload } from "../../middleware/multer.middleware.js";
 
 const router = Router();
 
-router
-  .route("/addSlider")
-  .post(authenticateToken, upload.array("sliderImages", 10), addSlider);
+router.route("/addSlider").post(authenticateToken, upload.any(), addSlider);
 
 router.route("/deleteSlider").delete(authenticateToken, deleteSlider);
 

@@ -2111,6 +2111,12 @@ const getUsers = async (req, res) => {
     const whereSQL =
       whereClauses.length > 0 ? "WHERE " + whereClauses.join(" AND ") : "";
 
+    // count total users
+    const [[{ total }]] = await pool.query(
+      `SELECT COUNT(*) as total FROM users ${whereSQL}`,
+      values
+    );
+
     values.push(limit);
     values.push((page - 1) * limit);
 
@@ -2125,8 +2131,6 @@ const getUsers = async (req, res) => {
         message: "No users found.",
       });
     }
-
-    const total = users.length;
 
     const pagination = {
       page,
