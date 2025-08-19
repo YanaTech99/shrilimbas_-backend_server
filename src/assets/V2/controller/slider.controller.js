@@ -332,9 +332,16 @@ const getSlider = async (req, res) => {
   );
 
   if (sliders.length === 0) {
-    return res.status(404).json({
-      success: false,
-      error: "Slider not found",
+    return res.status(200).json({
+      success: true,
+      message: "Sliders not found",
+      data: [],
+      pagination: {
+        total,
+        limit,
+        page,
+        totalPages,
+      },
     });
   }
 

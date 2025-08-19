@@ -493,10 +493,8 @@ const addProducts = async (req, res) => {
     // Insert product categories
     let categoryIds = [];
     if (Array.isArray(product.category_ids)) {
-      console.log("array", product.category_ids);
       categoryIds = product.category_ids.map(Number);
     } else if (typeof product.category_ids === "string") {
-      console.log(product.category_ids);
       categoryIds = product.category_ids
         .split(",")
         .map((id) => parseInt(id.trim()));
@@ -636,7 +634,7 @@ const addProducts = async (req, res) => {
 
         return res.status(500).json({
           success: false,
-          message: "Failed to insert product variants.",
+          error: "Failed to insert product variants.",
         });
       }
     }
@@ -662,8 +660,7 @@ const addProducts = async (req, res) => {
     console.error("Error adding product:", error);
     return res.status(500).json({
       success: false,
-      message: "Failed to add product.",
-      error: error.message,
+      error: "Failed to add product.",
     });
   } finally {
     for (const file of productFilesArray) {
