@@ -15,8 +15,10 @@ import { getPublicIdFromUrl } from "../../utils/extractPublicID.util.js";
 import { removeLocalFiles } from "../../helper/removeLocalFiles.js";
 
 const updateShop = async (req, res) => {
-  const pool = pools[req.tenantId];
+  const tenantId = req.tenantId;
+  const pool = pools[tenantId];
   const { id: userId } = req.user;
+  const image = req.file || null;
   const [shop] = await pool.execute(
     "SELECT id FROM shops WHERE user_id = ? AND is_active = true LIMIT 1",
     [userId]
@@ -24,21 +26,22 @@ const updateShop = async (req, res) => {
 
   const shopId = shop[0]?.id;
   if (!shopId) {
-    return res.status(404).json({ success: false, message: "Shop not found." });
+    removeLocalFiles(image);
+    return res.status(404).json({ success: false, error: "Shop not found." });
   }
 
   const updateFields = req.body;
 
   if (!Object.keys(updateFields).length) {
+    removeLocalFiles(image);
     return res
       .status(400)
-      .json({ success: false, message: "No data provided to update." });
+      .json({ success: false, error: "No data provided to update." });
   }
 
   const allowedFields = [
     "name",
     "description",
-    "logo_url",
     "license_number",
     "is_active",
     "email",
@@ -48,7 +51,6 @@ const updateShop = async (req, res) => {
     "categories",
     "working_hours",
     "is_open",
-    "last_login_at",
   ];
 
   // Filter out only valid fields
@@ -56,9 +58,10 @@ const updateShop = async (req, res) => {
     allowedFields.includes(field)
   );
   if (fieldsToUpdate.length === 0) {
+    removeLocalFiles(image);
     return res
       .status(400)
-      .json({ success: false, message: "No valid fields to update." });
+      .json({ success: false, error: "No valid fields to update." });
   }
 
   const setClause = fieldsToUpdate
@@ -76,9 +79,8 @@ const updateShop = async (req, res) => {
     return value;
   });
 
-  const sql = `UPDATE shops SET ${setClause}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`;
-
   try {
+    const sql = `UPDATE shops SET ${setClause}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`;
     const [result] = await pool.execute(sql, [...values, shopId]);
 
     if (result.affectedRows === 0) {
@@ -112,7 +114,7 @@ const updateAddress = async (req, res) => {
     });
   }
 
-  const modifiedInput = sanitizeInput(req.body);
+  const modifiedInput = req.body;
 
   const { address_id } = modifiedInput;
   const {
@@ -397,7 +399,7 @@ const addProducts = async (req, res) => {
       ? JSON.parse(req.body.product)
       : req.body;
 
-  const product = sanitizeInput(formattedData);
+  const product = formattedData;
   const variants =
     typeof product.variants === "string"
       ? JSON.parse(product.variants)
@@ -702,7 +704,7 @@ const updateProduct = async (req, res) => {
       ? JSON.parse(req.body.product)
       : req.body;
 
-  const product = sanitizeInput(formattedData);
+  const product = formattedData;
   const product_id = product.product_id;
 
   if (!product_id) {
@@ -1253,7 +1255,7 @@ const addVariant = async (req, res) => {
       ? JSON.parse(req.body.variant)
       : req.body.variant;
 
-  const variant = sanitizeInput(formattedData);
+  const variant = formattedData;
   const product_id = req.body.product_id;
 
   const [shopRows] = await pool.execute(
@@ -1665,7 +1667,7 @@ const addCategory = async (req, res) => {
 
   const shop_id = shop[0].id;
 
-  const modifiedInput = sanitizeInput(req.body);
+  const modifiedInput = req.body;
   const category = modifiedInput;
 
   const [categoryExists] = await pool.execute(
@@ -1971,7 +1973,7 @@ const updateCategory = async (req, res) => {
 
   const shop_id = shops[0].id;
 
-  const modifiedInput = sanitizeInput(req.body);
+  const modifiedInput = req.body;
   const { id } = modifiedInput;
 
   const [category] = await pool.query(`Select * from categories where id = ?`, [
