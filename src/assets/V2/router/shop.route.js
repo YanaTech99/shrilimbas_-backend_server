@@ -10,6 +10,7 @@ import {
   getPaginatedBrands,
   getPaginatedCategories,
   getPaginatedproducts,
+  getShopProfile,
   getUsers,
   updateAddress,
   updateCategory,
@@ -21,7 +22,11 @@ import { upload } from "../../middleware/multer.middleware.js";
 
 const router = Router();
 
-router.route("/updateShop").patch(authenticateToken, updateShop);
+router
+  .route("/updateShop")
+  .patch(authenticateToken, upload.single("shopLogo"), updateShop);
+
+router.route("/getShop").get(authenticateToken, getShopProfile);
 
 router.route("/updateAddress").patch(authenticateToken, updateAddress);
 

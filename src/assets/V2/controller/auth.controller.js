@@ -133,7 +133,7 @@ const sendOTP = async (req, res) => {
       if (!updateResult || updateResult.affectedRows === 0) {
         return res.status(500).json({
           success: false,
-          message: "Failed to send OTP",
+          error: "Failed to send OTP",
         });
       }
 
@@ -173,7 +173,7 @@ const sendOTP = async (req, res) => {
     if (!result || result.affectedRows === 0) {
       return res.status(500).json({
         success: false,
-        message: "Failed to send OTP",
+        error: "Failed to send OTP",
       });
     }
 
@@ -188,7 +188,7 @@ const sendOTP = async (req, res) => {
     console.error(err);
     return res.status(500).json({
       success: false,
-      message: "Internal server error. Failed to send OTP",
+      error: "Internal server error. Failed to send OTP",
     });
   } finally {
     client.release();
@@ -274,7 +274,7 @@ const loginViaPhone = async (req, res) => {
         await client.rollback();
         return res.status(500).json({
           success: false,
-          message: "Failed to create user profile",
+          error: "Failed to create user profile",
         });
       }
 

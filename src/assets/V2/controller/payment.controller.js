@@ -20,7 +20,7 @@ const createOrder = async (req, res) => {
     if (!amount || !order_id) {
       return res.status(400).json({
         success: false,
-        message: "Amount is required",
+        error: "Amount is required",
       });
     }
 
@@ -32,7 +32,7 @@ const createOrder = async (req, res) => {
     if (!existingOrder || existingOrder.length === 0) {
       return res.status(404).json({
         success: false,
-        message: "Order not found",
+        error: "Order not found",
       });
     }
 
@@ -87,7 +87,7 @@ const createOrder = async (req, res) => {
     console.error("Error creating Razorpay order:", error);
     return res
       .status(500)
-      .json({ success: false, message: "Failed to create order" });
+      .json({ success: false, error: "Failed to create order" });
   }
 };
 
@@ -105,7 +105,7 @@ const verifyPayment = async (req, res) => {
   if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
     return res
       .status(400)
-      .json({ success: false, message: "Missing payment data" });
+      .json({ success: false, error: "Missing payment data" });
   }
 
   const generatedSignature = crypto
@@ -116,7 +116,7 @@ const verifyPayment = async (req, res) => {
   if (generatedSignature !== razorpay_signature) {
     return res
       .status(400)
-      .json({ success: false, message: "Invalid Razorpay signature" });
+      .json({ success: false, error: "Invalid Razorpay signature" });
   }
 
   let message = "";

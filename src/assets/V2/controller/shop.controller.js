@@ -10,6 +10,7 @@ import {
   categoryImageFolder,
   defaultImageUrl,
   productImageFolder,
+  profileImageFolder,
 } from "../../../constants.js";
 import { getPublicIdFromUrl } from "../../utils/extractPublicID.util.js";
 import { removeLocalFiles } from "../../helper/removeLocalFiles.js";
@@ -19,6 +20,8 @@ const updateShop = async (req, res) => {
   const pool = pools[tenantId];
   const { id: userId } = req.user;
   const image = req.file || null;
+  let uploadedImage = null;
+
   const [shop] = await pool.execute(
     "SELECT id FROM shops WHERE user_id = ? AND is_active = true LIMIT 1",
     [userId]
@@ -31,12 +34,13 @@ const updateShop = async (req, res) => {
   }
 
   const updateFields = req.body;
-
-  if (!Object.keys(updateFields).length) {
-    removeLocalFiles(image);
-    return res
-      .status(400)
-      .json({ success: false, error: "No data provided to update." });
+  let address = null;
+  if (updateFields.address) {
+    address =
+      typeof updateFields.address === "string"
+        ? JSON.parse(updateFields.address)
+        : updateFields.address;
+    delete updateFields.address;
   }
 
   const allowedFields = [
@@ -57,47 +61,166 @@ const updateShop = async (req, res) => {
   const fieldsToUpdate = Object.keys(updateFields).filter((field) =>
     allowedFields.includes(field)
   );
-  if (fieldsToUpdate.length === 0) {
+  if (Object.keys(updateFields).length !== 0 && fieldsToUpdate.length === 0) {
     removeLocalFiles(image);
     return res
       .status(400)
       .json({ success: false, error: "No valid fields to update." });
   }
 
-  const setClause = fieldsToUpdate
-    .map((field) => `\`${field}\` = ?`)
-    .join(", ");
-  const values = fieldsToUpdate.map((field) => {
-    const value = updateFields[field];
-    // stringify JSON fields
-    if (
-      ["categories", "working_hours"].includes(field) &&
-      typeof value === "object"
-    ) {
-      return JSON.stringify(value);
-    }
-    return value;
-  });
+  const connection = await pool.getConnection();
 
   try {
-    const sql = `UPDATE shops SET ${setClause}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`;
-    const [result] = await pool.execute(sql, [...values, shopId]);
+    await connection.beginTransaction();
 
-    if (result.affectedRows === 0) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Shop not found." });
+    let logo_url = null;
+    if (image) {
+      const { secure_url, public_id } = await uploadImageToCloudinary(
+        image.path,
+        tenantId,
+        profileImageFolder
+      );
+      uploadedImage = public_id;
+      logo_url = secure_url;
     }
+
+    if (fieldsToUpdate.length > 0) {
+      const setClause = fieldsToUpdate.map((field) => `\`${field}\` = ?`);
+      const values = fieldsToUpdate.map((field) => {
+        const value = updateFields[field];
+        // stringify JSON fields
+        if (
+          ["categories", "working_hours"].includes(field) &&
+          typeof value === "object"
+        ) {
+          return JSON.stringify(value);
+        }
+        return value;
+      });
+
+      if (logo_url) {
+        values.push(logo_url);
+        setClause.push("`logo_url` = ?");
+      }
+
+      const sql = `UPDATE shops SET ${setClause.join(
+        ", "
+      )}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`;
+      const [result] = await connection.execute(sql, [...values, shopId]);
+
+      if (result.affectedRows === 0) {
+        throw new Error("Failed to update shop.");
+      }
+    }
+
+    if (address) {
+      const [addressResult] = await connection.execute(
+        `SELECT id FROM addresses WHERE shop_id = ?`,
+        [shopId]
+      );
+
+      const addressId = addressResult[0]?.id;
+      const addressFields = Object.keys(address);
+      const addressValues = Object.values(address).map((value) => {
+        if (typeof value === "object") {
+          return JSON.stringify(value);
+        }
+        return value;
+      });
+
+      const updateQuery = `UPDATE addresses SET ${addressFields
+        .map((field) => `\`${field}\` = ?`)
+        .join(", ")} WHERE shop_id = ?`;
+
+      const insertQuery = `INSERT INTO addresses (${addressFields
+        .map((field) => `\`${field}\``)
+        .join(", ")}, shop_id) VALUES (${addressFields
+        .map(() => "?")
+        .join(", ")}, ?)`;
+
+      addressValues.push(shopId);
+
+      const [result] = await connection.execute(
+        addressId ? updateQuery : insertQuery,
+        addressValues
+      );
+
+      if (result.affectedRows === 0) {
+        throw new Error("Failed to update address.");
+      }
+    }
+
+    await connection.commit();
 
     return res
       .status(200)
       .json({ success: true, message: "Shop updated successfully." });
   } catch (error) {
-    console.error("Error updating shop:", error.message);
+    console.error("Error updating shop:", error);
+    await connection.rollback();
+    await deleteFromCloudinary(uploadedImage);
     return res
       .status(500)
       .json({ success: false, error: "Internal Server Error" });
+  } finally {
+    if (image) {
+      removeLocalFiles(image);
+    }
+    connection.release();
   }
+};
+
+const getShopProfile = async (req, res) => {
+  const pool = pools[req.tenantId];
+  const { id: user_id } = req.user;
+  const [shop] = await pool.query(
+    `SELECT * FROM shops WHERE user_id = ? AND is_active = true`,
+    [user_id]
+  );
+
+  if (!shop || shop.length === 0) {
+    return res.status(404).json({ success: false, error: "Shop not found" });
+  }
+
+  // get address
+  const [address] = await pool.query(
+    `SELECT * FROM addresses WHERE shop_id = ?`,
+    [shop[0].id]
+  );
+
+  const shopData = shop[0];
+
+  const response = {
+    id: shopData.id,
+    name: shopData.name || "",
+    description: shopData.description || "",
+    logo_url: shopData.logo_url || "",
+    license_number: shopData.license_number || "",
+    status: shopData.is_active,
+    email: shopData.email || "",
+    contact_alternate_phone: shopData.contact_alternate_phone || "",
+    is_verified: shopData.is_verified,
+    is_featured: shopData.is_featured,
+    working_hours: JSON.parse(shopData.working_hours) || {},
+    is_open: shopData.is_open,
+    address: {
+      address_line1: address[0]?.address_line1 || "",
+      address_line2: address[0]?.address_line2 || "",
+      landmark: address[0]?.landmark || "",
+      city: address[0]?.city || "",
+      state: address[0]?.state || "",
+      postal_code: address[0]?.postal_code || "",
+      country: address[0]?.country || "",
+      latitude: address[0]?.latitude || "",
+      longitude: address[0]?.longitude || "",
+    },
+  };
+
+  return res.status(200).json({
+    success: true,
+    message: "Profile data get successfully",
+    data: response,
+  });
 };
 
 const updateAddress = async (req, res) => {
@@ -183,7 +306,7 @@ const addBrand = async (req, res) => {
   if (user_type !== "VENDOR") {
     return res.status(403).json({
       success: false,
-      message: "Forbidden: Only vendors can add brands.",
+      error: "Forbidden: Only vendors can add brands.",
     });
   }
 
@@ -193,14 +316,14 @@ const addBrand = async (req, res) => {
   try {
     // Get vendor's active shop
     const [shops] = await pool.execute(
-      "SELECT id FROM shops WHERE user_id = ? AND status = 'ACTIVE' LIMIT 1",
+      "SELECT id FROM shops WHERE user_id = ? AND is_active = 1 LIMIT 1",
       [user_id]
     );
 
     if (shops.length === 0) {
       return res.status(404).json({
         success: false,
-        message: "Active shop not found for this vendor.",
+        error: "Active shop not found for this vendor.",
       });
     }
 
@@ -219,7 +342,7 @@ const addBrand = async (req, res) => {
     if (!title) {
       return res.status(400).json({
         success: false,
-        message: "Brand title is required.",
+        error: "Brand title is required.",
       });
     }
 
@@ -227,7 +350,7 @@ const addBrand = async (req, res) => {
 
     const [result] = await pool.execute(
       `INSERT INTO brands 
-       (title, slug, description, status, sort_order, meta_title, meta_description, shop_id)
+       (title, slug, description, is_active, sort_order, meta_title, meta_description, shop_id)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         title,
@@ -271,8 +394,7 @@ const addBrand = async (req, res) => {
     console.error("Error adding brand:", error.message);
     return res.status(500).json({
       success: false,
-      message: "Failed to add brand.",
-      error: error.message,
+      error: "Failed to add brand.",
     });
   } finally {
     if (image && image.path && fs.existsSync(image.path)) {
@@ -286,7 +408,7 @@ const getPaginatedBrands = async (req, res) => {
   const { id: user_id } = req.user;
 
   const shop_id = await pool.execute(
-    "SELECT id FROM shops WHERE user_id = ? AND status = 'ACTIVE' LIMIT 1",
+    "SELECT id FROM shops WHERE user_id = ? AND is_active = 1 LIMIT 1",
     [user_id]
   );
 
@@ -307,8 +429,8 @@ const getPaginatedBrands = async (req, res) => {
 
     // Filters
     if (status) {
-      whereClauses.push("status = ?");
-      values.push(status);
+      whereClauses.push("is_active = ?");
+      values.push(status === "active" ? 1 : 0);
     }
 
     if (title) {
@@ -349,6 +471,7 @@ const getPaginatedBrands = async (req, res) => {
 
     return res.status(200).json({
       success: true,
+      message: "Brands fetched successfully.",
       total,
       page: parseInt(page),
       per_page: parseInt(limit),
@@ -359,8 +482,7 @@ const getPaginatedBrands = async (req, res) => {
     console.error("Error fetching brands:", error.message);
     return res.status(500).json({
       success: false,
-      message: "Failed to fetch brands.",
-      error: error.message,
+      error: "Failed to fetch brands.",
     });
   }
 };
@@ -375,7 +497,7 @@ const addProducts = async (req, res) => {
     removeLocalFiles(productFilesArray);
     return res.status(403).json({
       success: false,
-      message: "Forbidden: Only vendors can add products.",
+      error: "Forbidden: Only vendors can add products.",
     });
   }
 
@@ -388,7 +510,7 @@ const addProducts = async (req, res) => {
     removeLocalFiles(productFilesArray);
     return res.status(404).json({
       success: false,
-      message: "Active shop not found for this vendor.",
+      error: "Active shop not found for this vendor.",
     });
   }
 
@@ -420,7 +542,7 @@ const addProducts = async (req, res) => {
       removeLocalFiles(productFilesArray);
       return res.status(400).json({
         success: false,
-        message: `Missing required field: ${field}`,
+        error: `Missing required field: ${field}`,
       });
     }
   }
@@ -486,7 +608,7 @@ const addProducts = async (req, res) => {
       await connection.rollback();
       return res.status(500).json({
         success: false,
-        message: "Failed to insert product.",
+        error: "Failed to insert product.",
       });
     }
 
@@ -533,7 +655,7 @@ const addProducts = async (req, res) => {
 
         return res.status(500).json({
           success: false,
-          message: "Failed to insert product categories.",
+          error: "Failed to insert product categories.",
         });
       }
     }
@@ -682,7 +804,7 @@ const updateProduct = async (req, res) => {
   if (user_type !== "VENDOR") {
     return res.status(403).json({
       success: false,
-      message: "Forbidden: Only vendors can update their products.",
+      error: "Forbidden: Only vendors can update their products.",
     });
   }
 
@@ -694,7 +816,7 @@ const updateProduct = async (req, res) => {
   if (!shopRows.length) {
     return res.status(404).json({
       success: false,
-      message: "Active shop not found for this vendor.",
+      error: "Active shop not found for this vendor.",
     });
   }
 
@@ -710,7 +832,7 @@ const updateProduct = async (req, res) => {
   if (!product_id) {
     return res
       .status(400)
-      .json({ success: false, message: "Product ID is required." });
+      .json({ success: false, error: "Product ID is required." });
   }
 
   const [existingProductRows] = await pool.execute(
@@ -721,7 +843,7 @@ const updateProduct = async (req, res) => {
   if (!existingProductRows.length) {
     return res.status(404).json({
       success: false,
-      message: "Product not found.",
+      error: "Product not found.",
     });
   }
 
@@ -995,8 +1117,7 @@ const updateProduct = async (req, res) => {
     console.error("Update error:", error);
     return res.status(500).json({
       success: false,
-      message: "Failed to update product.",
-      error: error.message,
+      error: "Failed to update product.",
     });
   } finally {
     for (const file of productFilesArray) {
@@ -1433,7 +1554,7 @@ const getPaginatedproducts = async (req, res) => {
   if (user_type !== "VENDOR") {
     return res.status(403).json({
       success: false,
-      message: "Forbidden: Only vendors can access their products.",
+      error: "Forbidden: Only vendors can access their products.",
     });
   }
 
@@ -1461,7 +1582,7 @@ const getPaginatedproducts = async (req, res) => {
     if (shopRows.length === 0) {
       return res
         .status(404)
-        .json({ success: false, message: "No active shop found." });
+        .json({ success: false, error: "No active shop found." });
     }
 
     const shopId = shopRows[0].id;
@@ -1649,7 +1770,7 @@ const addCategory = async (req, res) => {
   if (user_type !== "VENDOR") {
     return res.status(403).json({
       success: false,
-      message: "Forbidden: Only vendor can add categories.",
+      error: "Forbidden: Only vendor can add categories.",
     });
   }
 
@@ -1661,7 +1782,7 @@ const addCategory = async (req, res) => {
   if (!shop || shop.length === 0) {
     return res.status(404).json({
       success: false,
-      message: "Shop not found.",
+      error: "Shop not found.",
     });
   }
 
@@ -1678,7 +1799,7 @@ const addCategory = async (req, res) => {
   if (categoryExists.length > 0) {
     return res.status(400).json({
       success: false,
-      message: "Category already exists.",
+      error: "Category already exists.",
     });
   }
 
@@ -1771,7 +1892,7 @@ const getPaginatedCategories = async (req, res) => {
   if (!shop || shop.length === 0) {
     return res.status(404).json({
       success: false,
-      message: "Shop not found.",
+      error: "Shop not found.",
     });
   }
   const shop_id = shop[0].id;
@@ -1879,7 +2000,7 @@ const deleteCategory = async (req, res) => {
   if (user_type !== "VENDOR") {
     return res.status(403).json({
       success: false,
-      message: "Forbidden: Only vendors can delete products.",
+      error: "Forbidden: Only vendors can delete products.",
     });
   }
 
@@ -1891,7 +2012,7 @@ const deleteCategory = async (req, res) => {
   if (shops.length === 0) {
     return res.status(404).json({
       success: false,
-      message: "Active shop not found for this vendor.",
+      error: "Active shop not found for this vendor.",
     });
   }
 
@@ -1907,7 +2028,7 @@ const deleteCategory = async (req, res) => {
   if (!category || category.length === 0) {
     return res.status(404).json({
       success: false,
-      message: "Category not found.",
+      error: "Category not found.",
     });
   }
 
@@ -1921,7 +2042,7 @@ const deleteCategory = async (req, res) => {
     if (result.affectedRows === 0) {
       return res.status(500).json({
         success: false,
-        message: "Failed to delete category.",
+        error: "Failed to delete category.",
       });
     }
 
@@ -1954,7 +2075,7 @@ const updateCategory = async (req, res) => {
     removeLocalFiles(image);
     return res.status(403).json({
       success: false,
-      message: "Forbidden: Only vendors can add products.",
+      error: "Forbidden: Only vendors can add products.",
     });
   }
 
@@ -1967,7 +2088,7 @@ const updateCategory = async (req, res) => {
     removeLocalFiles(image);
     return res.status(404).json({
       success: false,
-      message: "Active shop not found for this vendor.",
+      error: "Active shop not found for this vendor.",
     });
   }
 
@@ -1984,7 +2105,7 @@ const updateCategory = async (req, res) => {
     removeLocalFiles(image);
     return res.status(404).json({
       success: false,
-      message: "Category not found.",
+      error: "Category not found.",
     });
   }
 
@@ -2068,7 +2189,7 @@ const getUsers = async (req, res) => {
   if (user_type !== "VENDOR") {
     return res.status(403).json({
       success: false,
-      message: "Invalid user type.",
+      error: "Invalid user type.",
     });
   }
 
@@ -2080,7 +2201,7 @@ const getUsers = async (req, res) => {
   if (shops.length === 0) {
     return res.status(404).json({
       success: false,
-      message: "Active shop not found for this vendor.",
+      error: "Active shop not found for this vendor.",
     });
   }
 
@@ -2125,8 +2246,8 @@ const getUsers = async (req, res) => {
     );
 
     if (users.length === 0) {
-      return res.status(404).json({
-        success: false,
+      return res.status(200).json({
+        success: true,
         message: "No users found.",
       });
     }
@@ -2156,6 +2277,7 @@ const getUsers = async (req, res) => {
 
 export {
   updateShop,
+  getShopProfile,
   updateAddress,
   addCategory,
   addBrand,

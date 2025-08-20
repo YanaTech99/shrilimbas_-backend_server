@@ -112,7 +112,6 @@ const updateProfile = async (req, res) => {
         .map(([key, value]) => `${key} = '${value}'`)
         .join(", ");
 
-      console.log(addressQuery);
       const [addressResult] = await client.query(
         `UPDATE addresses SET ${addressQuery} WHERE customer_id = ?`,
         [customer_id[0].id]

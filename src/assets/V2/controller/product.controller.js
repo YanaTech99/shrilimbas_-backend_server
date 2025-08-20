@@ -139,6 +139,7 @@ const getPaginatedCategories = async (req, res) => {
 
     return res.status(200).json({
       success: true,
+      message: "Categories fetched successfully.",
       total,
       page: parseInt(page),
       per_page: parseInt(limit),
@@ -149,8 +150,7 @@ const getPaginatedCategories = async (req, res) => {
     console.error("Error fetching categories:", error.message);
     return res.status(500).json({
       success: false,
-      message: "Failed to fetch categories.",
-      error: error.message,
+      error: "Failed to fetch categories.",
     });
   }
 };
@@ -263,6 +263,7 @@ const getPaginatedProducts = async (req, res) => {
     if (products.length === 0) {
       return res.json({
         success: true,
+        message: "Products not found",
         total,
         page: parseInt(page),
         limit: parseInt(limit),
@@ -276,6 +277,7 @@ const getPaginatedProducts = async (req, res) => {
 
     return res.status(200).json({
       success: true,
+      message: "Products fetched successfully.",
       total,
       page: parseInt(page),
       limit: parseInt(limit),
@@ -286,8 +288,7 @@ const getPaginatedProducts = async (req, res) => {
     console.error("Customer product fetch error:", err.message);
     return res.status(500).json({
       success: false,
-      message: "Failed to fetch products.",
-      error: err.message,
+      error: "Failed to fetch products.",
     });
   }
 };

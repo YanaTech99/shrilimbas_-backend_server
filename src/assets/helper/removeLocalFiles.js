@@ -1,6 +1,7 @@
 import fs from "fs";
 
 const removeLocalFiles = async (files) => {
+  if (!files) return;
   if (Array.isArray(files)) {
     for (const file of files) {
       if (fs.existsSync(file.path)) fs.unlinkSync(file.path);

@@ -1,5 +1,4 @@
 import pools from "../../db/index.js";
-import fs from "fs";
 import {
   uploadImageToCloudinary,
   deleteFromCloudinary,
@@ -8,7 +7,6 @@ import { sanitizeInput } from "../../utils/validation.util.js";
 import { bannerImageFolder } from "../../../constants.js";
 import { getPublicIdFromUrl } from "../../utils/extractPublicID.util.js";
 import { removeLocalFiles } from "../../helper/removeLocalFiles.js";
-import { error } from "console";
 
 const addSlider = async (req, res) => {
   const tenantId = req.tenantId;
@@ -190,7 +188,7 @@ const deleteSlider = async (req, res) => {
   if (user_type !== "VENDOR") {
     return res.status(403).json({
       success: false,
-      message: "Forbidden: Only vendors can delete sliders.",
+      error: "Forbidden: Only vendors can delete sliders.",
     });
   }
 
@@ -200,7 +198,7 @@ const deleteSlider = async (req, res) => {
   if (!shopId || !shopId[0]) {
     return res.status(404).json({
       success: false,
-      message: "Shop not found for this vendor.",
+      error: "Shop not found for this vendor.",
     });
   }
 
@@ -224,7 +222,7 @@ const deleteSlider = async (req, res) => {
     if (result.affectedRows === 0) {
       return res.status(404).json({
         success: false,
-        message: "Slider not found.",
+        error: "Slider not found.",
       });
     }
 
@@ -255,7 +253,7 @@ const getSlider = async (req, res) => {
   if (user_type !== "VENDOR") {
     return res.status(403).json({
       success: false,
-      message: "Forbidden: Only vendors can add sliders.",
+      error: "Forbidden: Only vendors can add sliders.",
     });
   }
 
@@ -265,7 +263,7 @@ const getSlider = async (req, res) => {
   if (!shopId || !shopId[0]) {
     return res.status(404).json({
       success: false,
-      message: "Shop not found for this vendor.",
+      error: "Shop not found for this vendor.",
     });
   }
 
@@ -293,7 +291,7 @@ const getSlider = async (req, res) => {
   if (position && validPositions.includes(position) === false) {
     return res.status(400).json({
       success: false,
-      message: "Invalid position.",
+      error: "Invalid position.",
     });
   }
 
@@ -361,7 +359,7 @@ const getSlider = async (req, res) => {
   if (result.length === 0) {
     return res.status(404).json({
       success: false,
-      error: "Sliders not found",
+      error: "Sliders not found. Slider ID is invalid.",
     });
   } else {
     return res.status(200).json({
@@ -608,7 +606,7 @@ const updateSlider = async (req, res) => {
     console.log(error);
     return res.status(500).json({
       success: false,
-      message: "Failed to update slider.",
+      error: "Failed to update slider.",
     });
   } finally {
     removeLocalFiles(imageFiles);

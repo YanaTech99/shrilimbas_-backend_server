@@ -16,7 +16,7 @@ const placeOrder = async (req, res) => {
   if (!customer_id || !customer_id[0]) {
     return res.status(404).json({
       success: false,
-      message: "Customer not found",
+      error: "Customer not found",
     });
   }
 
@@ -382,7 +382,7 @@ const placeOrder = async (req, res) => {
     console.error(err);
     return res.status(500).json({
       success: false,
-      error: err.message,
+      error: "Failed to place order",
     });
   } finally {
     connection.release();
@@ -396,7 +396,7 @@ const updateStatus = async (req, res) => {
   if (user_type !== "VENDOR") {
     return res.status(403).json({
       success: false,
-      message: "Forbidden: Only vendors can update order status.",
+      error: "Forbidden: Only vendors can update order status.",
     });
   }
 
@@ -500,8 +500,8 @@ const getOrderByCustomerID = async (req, res) => {
     );
 
     if (orderRows.length === 0) {
-      return res.status(404).json({
-        success: false,
+      return res.status(200).json({
+        success: true,
         error: "Order not found",
       });
     }

@@ -313,7 +313,6 @@ const getAppData = async (req, res) => {
     return res.status(500).json({
       success: false,
       error: "Something went wrong",
-      message: err.message,
     });
   } finally {
     connection.release();
