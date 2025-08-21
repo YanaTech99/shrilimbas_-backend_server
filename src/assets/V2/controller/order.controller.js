@@ -344,7 +344,8 @@ const placeOrder = async (req, res) => {
     const fileName = `invoice-${order_number}-${randomStr}.pdf`;
     const { relativePath, pdfBuffer } = await generateInvoicePDF(
       orderData,
-      fileName
+      fileName,
+      tenantId
     );
 
     // Upload PDF to Cloudinary

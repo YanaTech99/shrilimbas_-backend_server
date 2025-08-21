@@ -7,7 +7,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const ROOT_DIR = path.resolve(__dirname, "../../../");
 
-const formatCurrency = (amount) => `₹${(amount || 0).toFixed(2)}`;
+const formatCurrency = (amount) => `${(amount || 0).toFixed(2)}`;
 
 const drawHorizontalLine = (doc, y, startX = 50, endX = 545) => {
   doc.moveTo(startX, y).lineTo(endX, y).stroke();
@@ -122,7 +122,18 @@ const drawItemsTable = (doc, items, startY) => {
   return currentY;
 };
 
-const generateInvoicePDF = async (orderData, outputFileName) => {
+const generateInvoicePDF = async (orderData, outputFileName, tenantId) => {
+  let shopName = "";
+  if (tenantId === "otkhzjwq") {
+    shopName = "Toolbizz";
+  } else if (tenantId === "xnprapms") {
+    shopName = "Pawerman";
+  } else if (tenantId === "bjxdtyyy") {
+    shopName = "Shrilimbas";
+  } else {
+    throw new Error("Invalid tenant ID");
+  }
+
   return new Promise((resolve, reject) => {
     try {
       const outputPath = path.join(
@@ -153,12 +164,7 @@ const generateInvoicePDF = async (orderData, outputFileName) => {
         .fillColor("#000000")
         .fontSize(14)
         .font("Helvetica-Bold")
-        .text("Brand Name", 75, currentY + 2);
-
-      doc
-        .fontSize(8)
-        .font("Helvetica")
-        .text("TRADING SINCE 1987", 75, currentY + 18);
+        .text(shopName, 75, currentY + 2);
 
       // Yellow bar and INVOICE title
       doc.rect(50, currentY + 40, 200, 8).fillAndStroke("#FFD700", "#FFD700");
@@ -195,15 +201,28 @@ const generateInvoicePDF = async (orderData, outputFileName) => {
       currentY += 25;
 
       // Customer details
-      doc.fontSize(10).font("Helvetica-Bold").text(customer.name, 50, currentY);
+      doc
+        .fontSize(10)
+        .font("Helvetica-Bold")
+        .text(`Name: ${customer.name || "Customer"}`, 50, currentY);
 
       currentY += 15;
 
       doc
         .font("Helvetica")
-        .text(`${d.address}`, 50, currentY)
-        .text(`${d.city}, ${d.state}`, 50, currentY + 15)
-        .text(`${d.postal_code}`, 50, currentY + 30);
+        .text(`Address: ${d.address}`, 50, currentY)
+        .text(
+          d.state && d.city ? `City/State: ${d.city}, ${d.state}` : "N/A",
+          50,
+          currentY + 15
+        )
+        .text(
+          d.country && d.postal_code
+            ? `Country: ${d.country}, ${d.postal_code}`
+            : "N/A",
+          50,
+          currentY + 30
+        );
 
       currentY += 60;
 
@@ -229,40 +248,66 @@ const generateInvoicePDF = async (orderData, outputFileName) => {
 
       // Price Summary (right side)
       const summaryStartX = 350;
+      const labelWidth = 100; // width reserved for labels
+      const valueWidth = 100; // width reserved for values (right-aligned)
       let summaryY = currentY;
 
       // Sub Total
       doc
         .fontSize(10)
         .font("Helvetica")
-        .text("Sub Total:", summaryStartX, summaryY)
-        .text(formatCurrency(s.sub_total), summaryStartX + 100, summaryY, {
+        .text("Sub Total:", summaryStartX, summaryY, {
+          width: labelWidth,
           align: "right",
-          width: 80,
-        });
+        })
+        .text(
+          formatCurrency(s.sub_total),
+          summaryStartX + labelWidth,
+          summaryY,
+          {
+            width: valueWidth,
+            align: "right",
+          }
+        );
 
       // Tax
       doc
-        .text("Tax:", summaryStartX, summaryY + 18)
-        .text(`${s.tax.toFixed(1)}`, summaryStartX + 100, summaryY + 18, {
+        .text("Tax:", summaryStartX, summaryY + 18, {
+          width: labelWidth,
           align: "right",
-          width: 80,
-        });
+        })
+        .text(
+          formatCurrency(s.tax),
+          summaryStartX + labelWidth,
+          summaryY + 18,
+          {
+            width: valueWidth,
+            align: "right",
+          }
+        );
 
       // Total with yellow background
       doc
-        .rect(summaryStartX, summaryY + 45, 145, 25)
+        .rect(summaryStartX, summaryY + 45, labelWidth + valueWidth, 25)
         .fillAndStroke("#FFD700", "#FFD700");
 
       doc
         .fillColor("#000000")
         .fontSize(12)
         .font("Helvetica-Bold")
-        .text("Total:", summaryStartX + 10, summaryY + 53)
-        .text(formatCurrency(s.total), summaryStartX + 65, summaryY + 53, {
+        .text("Total:", summaryStartX, summaryY + 53, {
+          width: labelWidth,
           align: "right",
-          width: 70,
-        });
+        })
+        .text(
+          formatCurrency(s.total),
+          summaryStartX + labelWidth,
+          summaryY + 53,
+          {
+            width: valueWidth,
+            align: "right",
+          }
+        );
 
       // Thank you message
       doc
