@@ -12,6 +12,9 @@ import {
   getPaginatedproducts,
   getShopProfile,
   getUsers,
+  softDeleteCategory,
+  softDeleteProduct,
+  softDeleteVariant,
   updateAddress,
   updateCategory,
   updateProduct,
@@ -61,5 +64,11 @@ router
   .patch(authenticateToken, upload.single("categoryImage"), updateCategory);
 
 router.route("/getUsers").get(authenticateToken, getUsers);
+
+router.route("/softDeleteProduct").delete(authenticateToken, softDeleteProduct);
+router.route("/softDeleteVariant").delete(authenticateToken, softDeleteVariant);
+router
+  .route("/softDeleteCategory")
+  .delete(authenticateToken, softDeleteCategory);
 
 export default router;

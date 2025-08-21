@@ -985,9 +985,8 @@ const updateProduct = async (req, res) => {
           "selling_price",
           "cost_price",
           "stock",
-          "stock_alert_at",
-          "is_available",
-          "is_visible",
+          "min_stock_alert",
+          "is_active",
           "is_deleted",
         ];
 
@@ -1666,7 +1665,9 @@ const getPaginatedproducts = async (req, res) => {
     // Step 6: Get product variants
     const [variantRows] = await pool.execute(
       `SELECT * FROM product_variants
-       WHERE product_id IN (${productIds.map(() => "?").join(",")})`,
+       WHERE product_id IN (${productIds
+         .map(() => "?")
+         .join(",")}) AND deleted_at IS NULL`,
       productIds
     );
 
@@ -1768,6 +1769,7 @@ const addCategory = async (req, res) => {
   const image = req.file ? req.file : null;
 
   if (user_type !== "VENDOR") {
+    removeLocalFiles(image);
     return res.status(403).json({
       success: false,
       error: "Forbidden: Only vendor can add categories.",
@@ -1780,6 +1782,7 @@ const addCategory = async (req, res) => {
   );
 
   if (!shop || shop.length === 0) {
+    removeLocalFiles(image);
     return res.status(404).json({
       success: false,
       error: "Shop not found.",
@@ -1791,12 +1794,21 @@ const addCategory = async (req, res) => {
   const modifiedInput = req.body;
   const category = modifiedInput;
 
+  if (!category.title || category.title.trim() === "") {
+    removeLocalFiles(image);
+    return res.status(400).json({
+      success: false,
+      error: "Category title is required.",
+    });
+  }
+
   const [categoryExists] = await pool.execute(
     "SELECT * FROM categories WHERE title = ? AND shop_id = ?",
     [category.title, shop_id]
   );
 
   if (categoryExists.length > 0) {
+    removeLocalFiles(image);
     return res.status(400).json({
       success: false,
       error: "Category already exists.",
@@ -1874,11 +1886,7 @@ const addCategory = async (req, res) => {
       error: error.message,
     });
   } finally {
-    if (image && image !== null) {
-      if (fs.existsSync(image.path)) {
-        fs.unlinkSync(image.path);
-      }
-    }
+    removeLocalFiles(image);
   }
 };
 
@@ -2275,6 +2283,157 @@ const getUsers = async (req, res) => {
   }
 };
 
+const softDeleteProduct = async (req, res) => {
+  const tenantId = req.tenantId;
+  const pool = pools[tenantId];
+  const { id: user_id, user_type } = req.user;
+
+  if (user_type !== "VENDOR") {
+    return res.status(403).json({
+      success: false,
+      error: "Forbidden: Only vendors can delete products.",
+    });
+  }
+
+  const [shops] = await pool.execute(
+    "SELECT id FROM shops WHERE user_id = ? AND is_active = true LIMIT 1",
+    [user_id]
+  );
+
+  if (shops.length === 0) {
+    return res.status(404).json({
+      success: false,
+      error: "Active shop not found for this vendor.",
+    });
+  }
+
+  const shop_id = shops[0].id;
+  const { id } = req.body;
+
+  if (!id) {
+    return res.status(400).json({
+      success: false,
+      error: "Product ID is required.",
+    });
+  }
+
+  try {
+    await pool.execute("UPDATE products SET is_deleted = 1 WHERE id = ?", [id]);
+    return res.status(200).json({
+      success: true,
+      message: "Product deleted successfully.",
+    });
+  } catch (error) {
+    console.error("Error deleting product:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Failed to delete product.",
+    });
+  }
+};
+
+const softDeleteVariant = async (req, res) => {
+  const tenantId = req.tenantId;
+  const pool = pools[tenantId];
+  const { id: user_id, user_type } = req.user;
+
+  if (user_type !== "VENDOR") {
+    return res.status(403).json({
+      success: false,
+      error: "Forbidden: Only vendors can delete products.",
+    });
+  }
+
+  const [shops] = await pool.execute(
+    "SELECT id FROM shops WHERE user_id = ? AND is_active = true LIMIT 1",
+    [user_id]
+  );
+
+  if (shops.length === 0) {
+    return res.status(404).json({
+      success: false,
+      error: "Active shop not found for this vendor.",
+    });
+  }
+
+  const shop_id = shops[0].id;
+  const { id } = req.body;
+  if (!id) {
+    return res.status(400).json({
+      success: false,
+      error: "Variant ID is required.",
+    });
+  }
+
+  try {
+    await pool.execute(
+      "UPDATE product_variants SET is_deleted = 1 WHERE id = ?",
+      [id]
+    );
+    return res.status(200).json({
+      success: true,
+      message: "Variant deleted successfully.",
+    });
+  } catch (error) {
+    console.error("Error deleting variant:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Failed to delete variant.",
+    });
+  }
+};
+
+const softDeleteCategory = async (req, res) => {
+  const tenantId = req.tenantId;
+  const pool = pools[tenantId];
+  const { id: user_id, user_type } = req.user;
+
+  if (user_type !== "VENDOR") {
+    return res.status(403).json({
+      success: false,
+      error: "Forbidden: Only vendors can delete products.",
+    });
+  }
+
+  const [shops] = await pool.execute(
+    "SELECT id FROM shops WHERE user_id = ? AND is_active = true LIMIT 1",
+    [user_id]
+  );
+
+  if (shops.length === 0) {
+    return res.status(404).json({
+      success: false,
+      error: "Active shop not found for this vendor.",
+    });
+  }
+
+  const shop_id = shops[0].id;
+  const { id } = req.body;
+
+  if (!id) {
+    return res.status(400).json({
+      success: false,
+      error: "Category ID is required.",
+    });
+  }
+
+  try {
+    await pool.execute("UPDATE categories SET is_deleted = 1 WHERE id = ?", [
+      id,
+    ]);
+    return res.status(200).json({
+      success: true,
+      message: "Category deleted successfully.",
+    });
+  } catch (error) {
+    console.error("Error deleting category:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Failed to delete category.",
+    });
+  }
+};
+
 export {
   updateShop,
   getShopProfile,
@@ -2292,4 +2451,7 @@ export {
   deleteVariant,
   addVariant,
   getUsers,
+  softDeleteProduct,
+  softDeleteVariant,
+  softDeleteCategory,
 };
