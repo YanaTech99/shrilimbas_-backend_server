@@ -1551,10 +1551,7 @@ const getPaginatedproducts = async (req, res) => {
   const { id: user_id, user_type } = req.user;
 
   if (user_type !== "VENDOR") {
-    return res.status(403).json({
-      success: false,
-      error: "Forbidden: Only vendors can access their products.",
-    });
+    return res.status(403).json({ success: false, error: "Forbidden" });
   }
 
   const {
@@ -1568,120 +1565,145 @@ const getPaginatedproducts = async (req, res) => {
   } = req.query;
 
   const offset = (parseInt(page) - 1) * parseInt(limit);
-  const filters = [];
-  const values = [];
-
   try {
-    // Step 1: Get vendor's shop ID
-    const [shopRows] = await pool.execute(
-      "SELECT id FROM shops WHERE user_id = ? AND is_active = true LIMIT 1",
+    // 🔹 Get vendor shop
+    const [[shop]] = await pool.execute(
+      "SELECT id FROM shops WHERE user_id = ? AND is_active = 1 LIMIT 1",
       [user_id]
     );
-
-    if (shopRows.length === 0) {
+    if (!shop)
       return res
         .status(404)
-        .json({ success: false, error: "No active shop found." });
-    }
+        .json({ success: false, error: "No active shop found" });
 
-    const shopId = shopRows[0].id;
+    // 🔹 Build dynamic WHERE
+    let whereSQL = `p.shop_id = ? AND p.deleted_at IS NULL`;
+    const whereValues = [shop.id];
 
-    filters.push("p.shop_id = ?");
-    values.push(shopId);
-    filters.push("p.deleted_at IS NULL");
-
-    // Optional filters
     if (status) {
-      filters.push("p.is_active = ?");
-      values.push(status === "active" ? 1 : 0);
+      whereSQL += " AND p.is_active = ?";
+      whereValues.push(status === "active" ? 1 : 0);
     }
-
     if (brand_id) {
-      filters.push("p.brand_id = ?");
-      values.push(brand_id);
+      whereSQL += " AND p.brand_id = ?";
+      whereValues.push(brand_id);
     }
-
     if (search) {
-      filters.push("(p.product_name LIKE ? OR p.sku LIKE ?)");
-      values.push(`%${search}%`, `%${search}%`);
+      whereSQL += " AND (p.product_name LIKE ? OR p.sku LIKE ?)";
+      whereValues.push(`%${search}%`, `%${search}%`);
+    }
+    if (category_id) {
+      whereSQL +=
+        " AND EXISTS (SELECT 1 FROM product_categories pc WHERE pc.product_id = p.id AND pc.category_id = ?)";
+      whereValues.push(category_id);
     }
 
-    const whereSQL = filters.length ? `WHERE ${filters.join(" AND ")}` : "";
+    // 🔹 One query for products + count + categories + variants
+    const [rows] = await pool.query(
+      `
+      WITH products_cte AS (
+        SELECT p.*
+        FROM products p
+        WHERE ${whereSQL}
+        ORDER BY p.sort_order ${order}
+        LIMIT ? OFFSET ?
+      )
+      SELECT 
+        p.id,
+        p.product_name,
+        p.slug,
+        p.sku,
+        p.stock_quantity,
+        p.tax_percentage,
+        p.min_stock_alert,
+        p.stock_unit,
+        p.is_in_stock,
+        p.hsn_code,
+        p.barcode,
+        p.brand_id AS brand,
+        p.status,
+        p.short_description,
+        p.long_description,
+        p.warehouse_location,
+        p.tags,
+        p.attributes,
+        p.specifications,
+        p.is_featured,
+        p.is_new_arrival,
+        p.is_best_seller,
+        p.is_active,
+        p.product_type,
+        p.meta_title,
+        p.meta_description,
+        p.custom_fields,
+        p.created_at,
+        p.updated_at,
 
-    // Step 2: Count total
-    const [countResult] = await pool.execute(
-      `SELECT COUNT(*) AS total FROM products p ${whereSQL}`,
-      values
+        -- categories as JSON array
+        (
+          SELECT JSON_ARRAYAGG(c.title) 
+          FROM product_categories pc 
+          JOIN categories c ON pc.category_id = c.id
+          WHERE pc.product_id = p.id
+        ) as categories,
+
+        -- variants as JSON array
+        (
+          SELECT JSON_ARRAYAGG(
+            JSON_OBJECT(
+              'id', v.id,
+              'sku', v.sku,
+              'barcode', v.barcode,
+              'color', v.color,
+              'size', v.size,
+              'material', v.material,
+              'selling_price', v.selling_price,
+              'cost_price', v.cost_price,
+              'base_price', v.base_price,
+              'cost_price', v.cost_price,
+              'stock', v.stock,
+              'min_stock_alert', v.min_stock_alert,
+              'thumbnail', v.thumbnail,
+              'gallery_images', v.gallery_images,
+              'is_active', v.is_active,
+              'is_deleted', v.is_deleted,
+              'created_at', v.created_at,
+              'updated_at', v.updated_at
+            )
+          )
+          FROM product_variants v 
+          WHERE v.product_id = p.id AND v.deleted_at IS NULL
+        ) as variants,
+
+        -- total count
+        (SELECT COUNT(*) FROM products p WHERE ${whereSQL}) as total
+
+      FROM products_cte p
+      `,
+      [...whereValues, parseInt(limit), offset, ...whereValues]
     );
 
-    const total = countResult[0].total;
-
-    // Step 3: Fetch paginated products
-    const [productRows] = await pool.execute(
-      `SELECT * FROM products p ${whereSQL} ORDER BY p.sort_order ${order} LIMIT ${parseInt(
-        limit
-      )} OFFSET ${offset}`,
-      [...values]
-    );
-
-    if (productRows.length === 0) {
-      return res.status(200).json({
+    if (!rows.length) {
+      return res.json({
         success: true,
-        message: "No products found.",
-        total,
-        page: parseInt(page),
-        limit: parseInt(limit),
+        message: "No products found",
+        pagination: {
+          total: 0,
+          page: parseInt(page),
+          limit: parseInt(limit),
+          totalPages: 0,
+        },
         data: [],
       });
     }
 
-    const productIds = productRows.map((p) => p.id);
+    const total = rows[0].total;
 
-    // Step 4: Category filter (after product fetch)
-    if (category_id) {
-      const [filtered] = await pool.execute(
-        `SELECT DISTINCT product_id FROM product_categories WHERE category_id = ?`,
-        [category_id]
-      );
-      const validIds = new Set(filtered.map((r) => r.product_id));
-      productRows = productRows.filter((p) => validIds.has(p.id));
-    }
-
-    // Step 5: Get categories for each product
-    const [categoryMapRows] = await pool.execute(
-      `SELECT pc.product_id, c.title
-       FROM product_categories pc
-       JOIN categories c ON pc.category_id = c.id
-       WHERE pc.product_id IN (${productIds.map(() => "?").join(",")})`,
-      productIds
-    );
-
-    const categoryMap = {};
-    for (const row of categoryMapRows) {
-      if (!categoryMap[row.product_id]) categoryMap[row.product_id] = [];
-      categoryMap[row.product_id].push(row.title);
-    }
-
-    // Step 6: Get product variants
-    const [variantRows] = await pool.execute(
-      `SELECT * FROM product_variants
-       WHERE product_id IN (${productIds
-         .map(() => "?")
-         .join(",")}) AND deleted_at IS NULL`,
-      productIds
-    );
-
-    const variantMap = {};
-    for (const v of variantRows) {
-      if (!variantMap[v.product_id]) variantMap[v.product_id] = [];
-      variantMap[v.product_id].push(v);
-    }
-
-    // Step 7: Build final response
-    const data = productRows.map((product) => {
-      const variants = variantMap[product.id] || [];
-
-      // Pick the first variant to use for main product values (if exists)
+    const data = rows.map((product) => {
+      const variants =
+        typeof product.variants === "string"
+          ? JSON.parse(product.variants || "[]")
+          : product.variants || [];
       const [mainVariant, ...otherVariants] = variants;
 
       return {
@@ -1690,8 +1712,8 @@ const getPaginatedproducts = async (req, res) => {
         slug: product.slug,
         sku: product.sku,
         total_stock: product.stock_quantity,
-        thumbnail: mainVariant.thumbnail,
-        selling_price: mainVariant.selling_price,
+        thumbnail: mainVariant ? mainVariant.thumbnail : null,
+        selling_price: mainVariant ? mainVariant.selling_price : null,
         tax_percentage: product.tax_percentage,
         min_stock_alert: product.min_stock_alert,
         stock_unit: product.stock_unit,
@@ -1704,17 +1726,17 @@ const getPaginatedproducts = async (req, res) => {
         long_description: product.long_description || "",
         warehouse_location: product.warehouse_location || "",
         tags:
-          (typeof product.tags === "string"
+          product.tags && typeof product.tags === "string"
             ? JSON.parse(product.tags)
-            : product.tags) || [],
+            : product.tags || [],
         attributes:
-          (typeof product.attributes === "string"
+          product.attributes && typeof product.attributes === "string"
             ? JSON.parse(product.attributes)
-            : product.attributes) || {},
+            : product.attributes || {},
         specifications:
-          (typeof product.specifications === "string"
+          product.specifications && typeof product.specifications === "string"
             ? JSON.parse(product.specifications)
-            : product.specifications) || {},
+            : product.specifications || {},
         is_featured: product.is_featured || false,
         is_new_arrival: product.is_new_arrival || false,
         is_best_seller: product.is_best_seller || false,
@@ -1723,42 +1745,33 @@ const getPaginatedproducts = async (req, res) => {
         meta_title: product.meta_title || "",
         meta_description: product.meta_description || "",
         custom_fields:
-          (typeof product.custom_fields === "string"
+          product.custom_fields && typeof product.custom_fields === "string"
             ? JSON.parse(product.custom_fields)
-            : product.custom_fields) || {},
+            : product.custom_fields || {},
         created_at: product.created_at,
         updated_at: product.updated_at,
-        categories: categoryMap[product.id] || [],
-        variants: variants.map((variant) => {
-          return {
-            ...variant,
-            gallery_images:
-              typeof variant.gallery_images === "string"
-                ? JSON.parse(variant.gallery_images)
-                : variant.gallery_images,
-          };
-        }), // remaining variants only
+        categories:
+          typeof product.categories === "string"
+            ? JSON.parse(product.categories || "[]")
+            : product.categories || [],
+        variants,
       };
     });
 
-    return res.status(200).json({
+    return res.json({
       success: true,
-      message: "Products fetched successfully.",
+      message: "Products fetched successfully",
       pagination: {
         total,
         page: parseInt(page),
         limit: parseInt(limit),
         totalPages: Math.ceil(total / limit),
       },
-      data: data,
+      data,
     });
-  } catch (error) {
-    console.error("Error fetching products:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Failed to fetch products.",
-      error: error.message,
-    });
+  } catch (err) {
+    console.error("Error:", err);
+    return res.status(500).json({ success: false, error: err.message });
   }
 };
 
@@ -1893,19 +1906,19 @@ const addCategory = async (req, res) => {
 const getPaginatedCategories = async (req, res) => {
   const pool = pools[req.tenantId];
   const { id: user_id } = req.user;
-  const [shop] = await pool.execute(
-    "SELECT id FROM shops WHERE user_id = ? AND is_active = true LIMIT 1",
-    [user_id]
-  );
-  if (!shop || shop.length === 0) {
-    return res.status(404).json({
-      success: false,
-      error: "Shop not found.",
-    });
-  }
-  const shop_id = shop[0].id;
 
   try {
+    // 🔹 1. Find shop
+    const [[shop]] = await pool.execute(
+      "SELECT id FROM shops WHERE user_id = ? AND is_active = 1 LIMIT 1",
+      [user_id]
+    );
+    if (!shop) {
+      return res.status(404).json({ success: false, error: "Shop not found." });
+    }
+    const shop_id = shop.id;
+
+    // 🔹 2. Query params
     const {
       page = 1,
       status = "active",
@@ -1916,78 +1929,83 @@ const getPaginatedCategories = async (req, res) => {
       order = "DESC",
     } = req.query;
 
-    const whereClauses = [];
-    const values = [];
+    const offset = (parseInt(page) - 1) * (parseInt(req.query.limit) || 10);
+    const limit = req.query.limit ? parseInt(req.query.limit) : 10;
 
-    // Filters
+    // 🔹 3. Dynamic filters
+    let whereSQL = `shop_id = ? AND is_deleted = 0`;
+    const values = [shop_id];
+
     if (status) {
-      whereClauses.push("is_active = ?");
-      values.push(status === "active" ? true : false);
+      whereSQL += " AND is_active = ?";
+      values.push(status === "active" ? 1 : 0);
     }
-
     if (title) {
-      whereClauses.push("title LIKE ?");
+      whereSQL += " AND title LIKE ?";
       values.push(`%${title}%`);
     }
-
     if (parent_id) {
-      whereClauses.push("parent_id = ?");
+      whereSQL += " AND parent_id = ?";
       values.push(parent_id);
     }
-
     if (search) {
-      whereClauses.push(`(
-        title LIKE ? OR
-        slug LIKE ? OR
-        description LIKE ?
-      )`);
+      whereSQL += " AND (title LIKE ? OR slug LIKE ? OR description LIKE ?)";
       values.push(`%${search}%`, `%${search}%`, `%${search}%`);
     }
 
-    if (shop_id) {
-      whereClauses.push("shop_id = ?");
-      values.push(shop_id);
-    }
+    // 🔹 4. Safer sort whitelist
+    const validSortFields = ["sort_order", "title", "created_at", "updated_at"];
+    const sortField = validSortFields.includes(sort_by)
+      ? sort_by
+      : "sort_order";
+    const sortOrder = order.toUpperCase() === "ASC" ? "ASC" : "DESC";
 
-    whereClauses.push("is_deleted = false");
-
-    const whereSQL = whereClauses.length
-      ? `WHERE ${whereClauses.join(" AND ")}`
-      : "";
-
-    // Total count for pagination
-    const [countResult] = await pool.execute(
-      `SELECT COUNT(*) AS total FROM categories ${whereSQL}`,
-      values
+    // 🔹 5. Single query with CTE (count + data)
+    const [rows] = await pool.query(
+      `
+      WITH categories_cte AS (
+        SELECT c.*
+        FROM categories c
+        WHERE ${whereSQL}
+        ORDER BY ${sortField} ${sortOrder}
+        LIMIT ? OFFSET ?
+      )
+      SELECT 
+        (SELECT COUNT(*) FROM categories WHERE ${whereSQL}) as total,
+        c.*
+      FROM categories_cte c
+      `,
+      [...values, limit, offset, ...values] // values repeated for subquery
     );
-    const total = countResult[0].total;
-    let limit = req.query.limit ? parseInt(req.query.limit) : total;
-    const offset = (parseInt(page) - 1) * parseInt(limit);
-    const totalPages = Math.ceil(total / parseInt(limit));
 
-    if (total === 0) {
-      return res.status(200).json({
+    if (!rows.length) {
+      return res.json({
         success: true,
         message: "No categories found.",
+        pagination: {
+          total: 0,
+          page: parseInt(page),
+          per_page: limit,
+          total_pages: 0,
+        },
+        data: [],
       });
     }
 
-    // Fetch paginated categories
-    const [categories] = await pool.execute(
-      `SELECT * FROM categories ${whereSQL} ORDER BY ${sort_by} ${order} ${
-        limit ? `LIMIT ${limit} OFFSET ${parseInt(offset)}` : ""
-      }`,
-      [...values]
-    );
+    const total = rows[0].total;
+    const categories = rows.map((r) => {
+      const { total, ...rest } = r; // remove total from row
+      return rest;
+    });
 
-    return res.status(200).json({
+    return res.json({
       success: true,
       message: "Categories fetched successfully.",
       pagination: {
         total,
         page: parseInt(page),
-        per_page: parseInt(limit),
-        total_pages: totalPages,
+        per_page: limit,
+        total_pages: Math.ceil(total / limit),
       },
       data: categories,
     });
@@ -2201,77 +2219,93 @@ const getUsers = async (req, res) => {
     });
   }
 
-  const [shops] = await pool.execute(
-    "SELECT id FROM shops WHERE user_id = ? AND is_active = true LIMIT 1",
-    [user_id]
-  );
-
-  if (shops.length === 0) {
-    return res.status(404).json({
-      success: false,
-      error: "Active shop not found for this vendor.",
-    });
-  }
-
-  const shop_id = shops[0].id;
-
-  const { status, search = "" } = req.query;
-  const page = parseInt(req.query.page) || 1;
-  const limit = parseInt(req.query.limit) || 10;
-
   try {
-    const whereClauses = [];
-    const values = [];
+    // 🔹 1. Verify shop
+    const [[shop]] = await pool.execute(
+      "SELECT id FROM shops WHERE user_id = ? AND is_active = 1 LIMIT 1",
+      [user_id]
+    );
+    if (!shop) {
+      return res
+        .status(404)
+        .json({ success: false, error: "Active shop not found." });
+    }
+
+    // 🔹 2. Query params
+    const {
+      status,
+      search = "",
+      sort_by = "created_at",
+      order = "DESC",
+    } = req.query;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const offset = (page - 1) * limit;
+
+    // 🔹 3. Dynamic filters
+    let whereSQL = "u.id != ?";
+    const values = [user_id];
 
     if (status) {
-      whereClauses.push("is_active = ?");
+      whereSQL += " AND u.is_active = ?";
       values.push(status === "active" ? 1 : 0);
     }
 
     if (search) {
-      whereClauses.push("full_name LIKE ?");
+      whereSQL += " AND u.full_name LIKE ?";
       values.push(`%${search}%`);
     }
 
-    whereClauses.push("id != ?");
-    values.push(user_id);
+    // 🔹 4. Sort whitelist
+    const validSortFields = ["created_at", "updated_at", "full_name"];
+    const sortField = validSortFields.includes(sort_by)
+      ? sort_by
+      : "created_at";
+    const sortOrder = order.toUpperCase() === "ASC" ? "ASC" : "DESC";
 
-    const whereSQL =
-      whereClauses.length > 0 ? "WHERE " + whereClauses.join(" AND ") : "";
-
-    // count total users
-    const [[{ total }]] = await pool.query(
-      `SELECT COUNT(*) as total FROM users ${whereSQL}`,
-      values
+    // 🔹 5. Single query for count + data (CTE)
+    const [rows] = await pool.query(
+      `
+      WITH users_cte AS (
+        SELECT u.*
+        FROM users u
+        WHERE ${whereSQL}
+        ORDER BY u.${sortField} ${sortOrder}
+        LIMIT ? OFFSET ?
+      )
+      SELECT 
+        (SELECT COUNT(*) FROM users u WHERE ${whereSQL}) as total,
+        u.*
+      FROM users_cte u
+      `,
+      [...values, limit, offset, ...values] // `values` reused for count subquery
     );
 
-    values.push(limit);
-    values.push((page - 1) * limit);
-
-    const [users] = await pool.query(
-      `SELECT * FROM users ${whereSQL} LIMIT ? OFFSET ?`,
-      values
-    );
-
-    if (users.length === 0) {
-      return res.status(200).json({
+    if (!rows.length) {
+      return res.json({
         success: true,
         message: "No users found.",
+        pagination: { total: 0, page, limit, total_pages: 0 },
+        users: [],
       });
     }
 
-    const pagination = {
-      page,
-      limit,
-      total_pages: Math.ceil(total / limit),
-      total,
-    };
+    const total = rows[0].total;
+    const users = rows.map((r) => {
+      const { total, ...rest } = r; // strip "total" from each row
+      return rest;
+    });
 
-    return res.status(200).json({
+    return res.json({
       success: true,
       message: "Users fetched successfully.",
       users,
-      pagination,
+      pagination: {
+        page,
+        limit,
+        total,
+        total_pages: Math.ceil(total / limit),
+      },
     });
   } catch (error) {
     console.error("Error fetching users:", error);
