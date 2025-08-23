@@ -63,6 +63,7 @@ import productRoutesV2 from "./assets/V2/router/product.route.js";
 import sliderRoutesV2 from "./assets/V2/router/slider.route.js";
 import shopRoutesV2 from "./assets/V2/router/shop.route.js";
 import paymentRoutesV2 from "./assets/V2/router/payment.route.js";
+import settingRoutesV2 from "./assets/V2/router/setting.route.js";
 
 // define routes
 app.use("/api/v2/auth", multiTenantMiddleware, authRoutesV2);
@@ -74,6 +75,7 @@ app.use("/api/v2/orders", multiTenantMiddleware, orderRoutesV2);
 app.use("/api/v2/cart", multiTenantMiddleware, cartRoutesV2);
 app.use("/api/v2/customer", multiTenantMiddleware, customerRoutesV2);
 app.use("/api/v2/payment", multiTenantMiddleware, paymentRoutesV2);
+app.use("/api/v2/setting", multiTenantMiddleware, settingRoutesV2);
 
 // ****************** V2 API ******************
 

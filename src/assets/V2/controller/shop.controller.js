@@ -1971,9 +1971,11 @@ const getPaginatedCategories = async (req, res) => {
         LIMIT ? OFFSET ?
       )
       SELECT 
-        (SELECT COUNT(*) FROM categories WHERE ${whereSQL}) as total,
-        c.*
+        (SELECT COUNT(*) FROM categories WHERE ${whereSQL}) AS total,
+        c.*,
+        p.title AS parent_title
       FROM categories_cte c
+      LEFT JOIN categories p ON c.parent_id = p.id
       `,
       [...values, limit, offset, ...values] // values repeated for subquery
     );
@@ -2013,7 +2015,6 @@ const getPaginatedCategories = async (req, res) => {
     console.error("Error fetching categories:", error.message);
     return res.status(500).json({
       success: false,
-      message: "Failed to fetch categories.",
       error: error.message,
     });
   }

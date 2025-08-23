@@ -2,7 +2,7 @@ CREATE TABLE users (
   id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
   uuid BINARY(16) NOT NULL UNIQUE,
   tenant_id CHAR(36) NOT NULL,
-  user_type ENUM('CUSTOMER','VENDOR','DELIVERY_BOY') NOT NULL DEFAULT 'CUSTOMER',
+  user_type ENUM('CUSTOMER','VENDOR','DELIVERY_BOY', 'ADMIN') NOT NULL DEFAULT 'CUSTOMER',
 
   -- Auth Fields
   email VARCHAR(255) UNIQUE,
@@ -624,3 +624,42 @@ CREATE TABLE failed_transactions (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
+
+// setting table
+CREATE TABLE `app_settings` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `user_id` INT NOT NULL unique,
+    
+    -- Basic App Info
+    `logo_url` VARCHAR(255) DEFAULT NULL,
+    `app_name` VARCHAR(100) DEFAULT NULL,
+    `owner_name` VARCHAR(100) DEFAULT NULL,
+    `phone` VARCHAR(20) DEFAULT NULL,
+    `email` VARCHAR(150) DEFAULT NULL,
+    `address` TEXT DEFAULT NULL,
+    
+    -- Social Media Links
+    `facebook_link` VARCHAR(255) DEFAULT NULL,
+    `instagram_link` VARCHAR(255) DEFAULT NULL,
+    `youtube_link` VARCHAR(255) DEFAULT NULL,
+    
+    -- App Config
+    `app_status` ENUM('active', 'inactive', 'maintenance') DEFAULT 'active',
+    `allowed_image_size` VARCHAR(50) DEFAULT '2MB',
+    
+    -- Mailjet Integration
+    `mailjet_api_key` VARCHAR(150) DEFAULT NULL,
+    `mailjet_secret_key` VARCHAR(150) DEFAULT NULL,
+    `mailjet_sender_email` VARCHAR(150) DEFAULT NULL,
+    `mailjet_sender_name` VARCHAR(100) DEFAULT NULL,
+    
+    -- Razorpay Integration
+    `razorpay_key_id` VARCHAR(150) DEFAULT NULL,
+    `razorpay_key_secret` VARCHAR(150) DEFAULT NULL,
+    
+    -- Timestamps
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    
+    FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

@@ -40,7 +40,7 @@ const sendOTP = async (req, res) => {
     });
   }
 
-  const validUserTypes = ["CUSTOMER", "VENDOR", "DELIVERY_BOY"];
+  const validUserTypes = ["CUSTOMER", "VENDOR", "DELIVERY_BOY", "ADMIN"];
   if (!validUserTypes.includes(user_type)) {
     return res.status(400).json({
       success: false,
@@ -223,7 +223,7 @@ const loginViaPhone = async (req, res) => {
     });
   }
 
-  const validUserTypes = ["CUSTOMER", "VENDOR", "DELIVERY_BOY"];
+  const validUserTypes = ["CUSTOMER", "VENDOR", "DELIVERY_BOY", "ADMIN"];
   if (!validUserTypes.includes(user_type)) {
     return res.status(400).json({
       success: false,
@@ -256,28 +256,33 @@ const loginViaPhone = async (req, res) => {
       );
 
       // insert into resepective profile table based on user type
-      let profileTable = "customers";
+      let profileTable = "";
       if (user_type === "VENDOR") {
         profileTable = "shops";
       } else if (user_type === "DELIVERY_BOY") {
         profileTable = "delivery_boys";
+      } else if (user_type === "CUSTOMER") {
+        profileTable = "customers";
+      } else {
+        profileTable = "";
       }
 
-      const [profileInsertResult] = await client.execute(
-        `INSERT INTO ${profileTable} (user_id, ${
-          user_type === "VENDOR" ? "logo_url" : "profile_image_url"
-        }) VALUES (?, ?)`,
-        [newUserRows[0].id, defaultProfileUrl]
-      );
+      if (profileTable !== "") {
+        const [profileInsertResult] = await client.execute(
+          `INSERT INTO ${profileTable} (user_id, ${
+            user_type === "VENDOR" ? "logo_url" : "profile_image_url"
+          }) VALUES (?, ?)`,
+          [newUserRows[0].id, defaultProfileUrl]
+        );
 
-      if (profileInsertResult.affectedRows === 0) {
-        await client.rollback();
-        return res.status(500).json({
-          success: false,
-          error: "Failed to create user profile",
-        });
+        if (profileInsertResult.affectedRows === 0) {
+          await client.rollback();
+          return res.status(500).json({
+            success: false,
+            error: "Failed to create user profile",
+          });
+        }
       }
-
       user = newUserRows[0];
       message = "Welcome new user";
     } else {
