@@ -1929,9 +1929,6 @@ const getPaginatedCategories = async (req, res) => {
       order = "DESC",
     } = req.query;
 
-    const offset = (parseInt(page) - 1) * (parseInt(req.query.limit) || 10);
-    const limit = req.query.limit ? parseInt(req.query.limit) : 10;
-
     // 🔹 3. Dynamic filters
     let whereSQL = `shop_id = ? AND is_deleted = 0`;
     const values = [shop_id];
@@ -1960,6 +1957,15 @@ const getPaginatedCategories = async (req, res) => {
       : "sort_order";
     const sortOrder = order.toUpperCase() === "ASC" ? "ASC" : "DESC";
 
+    const [totalCount] = await pool.execute(
+      "SELECT COUNT(*) AS total FROM categories WHERE " + whereSQL,
+      values
+    );
+
+    const total = totalCount[0].total;
+    const limit = req.query.limit ? parseInt(req.query.limit) : total;
+    const offset = (parseInt(page) - 1) * limit;
+
     // 🔹 5. Single query with CTE (count + data)
     const [rows] = await pool.query(
       `
@@ -1971,7 +1977,6 @@ const getPaginatedCategories = async (req, res) => {
         LIMIT ? OFFSET ?
       )
       SELECT 
-        (SELECT COUNT(*) FROM categories WHERE ${whereSQL}) AS total,
         c.*,
         p.title AS parent_title
       FROM categories_cte c
@@ -1994,12 +1999,6 @@ const getPaginatedCategories = async (req, res) => {
       });
     }
 
-    const total = rows[0].total;
-    const categories = rows.map((r) => {
-      const { total, ...rest } = r; // remove total from row
-      return rest;
-    });
-
     return res.json({
       success: true,
       message: "Categories fetched successfully.",
@@ -2009,7 +2008,7 @@ const getPaginatedCategories = async (req, res) => {
         per_page: limit,
         total_pages: Math.ceil(total / limit),
       },
-      data: categories,
+      data: rows,
     });
   } catch (error) {
     console.error("Error fetching categories:", error.message);
