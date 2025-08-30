@@ -10,17 +10,20 @@ import {
 import fs from "fs";
 import { defaultProfileUrl, profileImageFolder } from "../../../constants.js";
 import { getPublicIdFromUrl } from "../../utils/extractPublicID.util.js";
+import { removeLocalFiles } from "../../helper/removeLocalFiles.js";
 
 const updateProfile = async (req, res) => {
   const tenantId = req.tenantId;
   const pool = pools[tenantId];
   const { id: user_id } = req.user;
+  const profileImage = req.file;
   const [customer_id] = await pool.query(
     `SELECT * FROM customers WHERE user_id = ?`,
     [user_id]
   );
 
   if (!customer_id || customer_id.length === 0) {
+    removeLocalFiles(profileImage);
     return res.status(404).json({
       success: false,
       error: "Customer not found",
@@ -32,9 +35,6 @@ const updateProfile = async (req, res) => {
     Object.keys(req.body).length === 0 &&
     !req.file
   ) {
-    if (req.file.path) {
-      fs.unlinkSync(req.file.path);
-    }
     return res.status(400).json({
       success: false,
       error: "No data provided",
@@ -60,7 +60,6 @@ const updateProfile = async (req, res) => {
     address = {},
   } = modifiedInput;
 
-  const profileImage = req.file;
   let uploadedImage = null;
 
   const { errors } = validateUserInput({
@@ -69,6 +68,7 @@ const updateProfile = async (req, res) => {
     phone: alternate_phone,
   });
   if (errors.length > 0) {
+    removeLocalFiles(profileImage);
     return res.status(400).json({
       success: false,
       errors,
@@ -166,13 +166,15 @@ const updateProfile = async (req, res) => {
   } catch (error) {
     console.log(error);
     await client.rollback();
-    deleteFromCloudinary(uploadedImage);
+    if (uploadedImage) {
+      await deleteFromCloudinary(uploadedImage);
+    }
     return res.status(500).json({
       success: false,
       error: "Failed to update profile.",
     });
   } finally {
-    if (profileImage && profileImage.path) fs.unlinkSync(profileImage.path);
+    removeLocalFiles(profileImage);
     client.release();
   }
 };
