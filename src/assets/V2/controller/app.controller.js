@@ -321,11 +321,8 @@ const getAppData = async (req, res) => {
 };
 
 const searchFilterData = async (req, res) => {
+  const pool = pools[req.tenantId];
   const { searchString } = req.query;
-  const userId = req.userId;
-  const tenantID = req.tenantId;
-  const pool = pools[tenantID];
-  const connection = await pool.getConnection();
 
   try {
     if (!searchString) {
@@ -337,58 +334,124 @@ const searchFilterData = async (req, res) => {
 
     const searchTerm = `%${searchString}%`;
 
-    // First, get matching products
-    const [products] = await connection.query(
-      `SELECT * FROM products 
-       WHERE product_name LIKE ? 
-       OR JSON_SEARCH(tags, 'one', ?) IS NOT NULL`,
+    // 🔹 1. Get matching products
+    const [products] = await pool.query(
+      `SELECT * FROM products p
+       WHERE p.product_name LIKE ?
+       OR JSON_SEARCH(p.tags, 'one', ?) IS NOT NULL
+       AND p.deleted_at IS NULL AND p.is_in_stock = TRUE AND p.is_active = TRUE AND p.is_deleted = FALSE
+       ORDER BY p.created_at DESC
+       LIMIT 100`, // Limit to prevent huge responses
       [searchTerm, `%${searchString}%`]
     );
 
-    if (products.length === 0) {
-      return res.status(200).json({
+    const total = products.length;
+
+    if (total === 0) {
+      return res.json({
         success: true,
-        message: "No products found",
+        message: "Products not found",
+        total: 0,
+        page: 1,
+        limit: 100,
+        totalPages: 1,
         data: [],
       });
     }
 
-    const productIds = products.map(p => p.id);
+    const productIds = products.map((p) => p.id);
 
-    // Get variants for matched products
-    const [variants] = await connection.query(
+    // 🔹 2. Get related categories
+    const [categories] = await pool.query(
+      `SELECT pc.product_id, c.title 
+       FROM product_categories pc
+       JOIN categories c ON pc.category_id = c.id
+       WHERE pc.product_id IN (?)`,
+      [productIds]
+    );
+
+    // 🔹 3. Get variants
+    const [variants] = await pool.query(
       `SELECT * FROM product_variants WHERE product_id IN (?)`,
       [productIds]
     );
 
-    // Group variants by product_id
-    const variantsMap = variants.reduce((acc, variant) => {
-      if (!acc[variant.product_id]) {
-        acc[variant.product_id] = [];
-      }
-      acc[variant.product_id].push(variant);
+    // 🔹 4. Build maps
+    const categoryMap = categories.reduce((acc, row) => {
+      if (!acc[row.product_id]) acc[row.product_id] = [];
+      acc[row.product_id].push(row.title);
       return acc;
     }, {});
 
-    // Attach variants to products
-    const productsWithVariants = products.map(product => ({
-      ...product,
-      variants: variantsMap[product.id] || [],
-    }));
+    const variantMap = variants.reduce((acc, v) => {
+      if (!acc[v.product_id]) acc[v.product_id] = [];
+      acc[v.product_id].push({
+        ...v,
+        gallery_images:
+          typeof v.gallery_images === "string"
+            ? JSON.parse(v.gallery_images)
+            : v.gallery_images || [],
+      });
+      return acc;
+    }, {});
 
-    return res.status(200).json({
-      success: true,
-      message: "Search filter with variants applied successfully",
-      data: productsWithVariants,
+    // 🔹 5. Format products like in getPaginatedProducts
+    const response = products.map((product) => {
+      const fields = [
+        "specifications",
+        "tags",
+        "attributes",
+        "custom_fields",
+        "gallery_images",
+      ];
+      for (const field of fields) {
+        if (product[field]) {
+          product[field] =
+            typeof product[field] === "string"
+              ? JSON.parse(product[field])
+              : product[field];
+        }
+      }
+
+      const productVariants = variantMap[product.id] || [];
+      const mainVariant = productVariants[0];
+
+      const price = parseFloat(mainVariant?.selling_price || 0);
+      const tax = parseFloat(product.tax_percentage || 0);
+      const discount = parseFloat(product.discount || 0);
+      const total_price = price - discount + tax;
+
+      return {
+        ...product,
+        categories: categoryMap[product.id] || [],
+        thumbnail: mainVariant?.thumbnail || "",
+        gallery_images: mainVariant?.gallery_images || [],
+        variants: productVariants.map((v) => {
+          const vPrice = parseFloat(v.selling_price) || 0;
+          return {
+            ...v,
+            finalAmmount: vPrice - discount + tax,
+          };
+        }),
+        finalAmmount: total_price,
+      };
     });
-  } catch (error) {
-    console.error("Error in searchFilterData:", error);
+
+    return res.json({
+      success: true,
+      message: "Search filter applied successfully",
+      total,
+      page: 1,
+      limit: 100,
+      totalPages: 1,
+      data: response,
+    });
+  } catch (err) {
+    console.error("Error in searchFilterData:", err.message);
     return res.status(500).json({
       success: false,
-      message: "Internal server error",
+      error: "Failed to fetch products.",
     });
-  } finally {
-    connection.release();
   }
 };
 
