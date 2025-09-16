@@ -83,7 +83,6 @@ const getCartData = async (customer_id, connection) => {
 
 const modifyProductResponse = (products, variantsMap, categoriesMap) => {
   return products.map((product) => {
-    // Parse JSON fields only once
     const fields = [
       "specifications",
       "tags",
@@ -101,42 +100,34 @@ const modifyProductResponse = (products, variantsMap, categoriesMap) => {
       }
     }
 
-    // Attach categories from map
     const categoriesArray = categoriesMap.get(product.id) || [];
-
-    // Attach variants from map
     const productVariants = variantsMap.get(product.id) || [];
-
-    // Use first variant for some fields fallback
     const firstVariant = productVariants[0] || {};
 
-    // attach thumbnail from first variant
-    product.thumbnail = firstVariant.thumbnail;
+    // Safely set product thumbnail
+    product.thumbnail = firstVariant.thumbnail || null;
 
-    // Parse gallery_images for first variant
-    if (firstVariant.gallery_images) {
-      product.gallery_images =
-        typeof firstVariant.gallery_images === "string"
+    // Parse first variant's gallery_images or fallback to empty array
+    product.gallery_images =
+      firstVariant.gallery_images
+        ? typeof firstVariant.gallery_images === "string"
           ? JSON.parse(firstVariant.gallery_images)
-          : firstVariant.gallery_images;
-    } else {
-      product.gallery_images = [];
-    }
+          : firstVariant.gallery_images
+        : [];
 
-    // Calculate final amount
-    const price = parseFloat(firstVariant.selling_price) || 0;
     const tax = parseFloat(product.tax_percentage || 0);
     const discount = parseFloat(product.discount || 0);
-    const total_price = price - discount + tax;
 
-    // Map variants with extra fields
+    // Map variants properly with correct per-variant finalAmmount
     const variants = productVariants.map((variant) => {
       const vPrice = parseFloat(variant.selling_price) || 0;
+      const finalAmmount = vPrice - discount + tax;
+
       const vIsInStock = variant.stock > 0 ? 1 : 0;
 
       return {
         ...variant,
-        finalAmmount: total_price,
+        finalAmmount,
         is_in_stock: vIsInStock,
         gallery_images:
           typeof variant.gallery_images === "string"
@@ -145,11 +136,15 @@ const modifyProductResponse = (products, variantsMap, categoriesMap) => {
       };
     });
 
+    // Set product-level finalAmmount as the first variant's computed amount or 0
+    const productFinalAmmount =
+      variants.length > 0 ? variants[0].finalAmmount : 0;
+
     return {
       ...product,
       categories: categoriesArray,
       variants,
-      finalAmmount: total_price,
+      finalAmmount: productFinalAmmount,
     };
   });
 };
@@ -161,7 +156,6 @@ const getAppData = async (req, res) => {
   const connection = await pool.getConnection();
 
   try {
-    // Get customer_id if userId exists
     let customer_id = null;
     if (userId) {
       const [customerRows] = await connection.query(
@@ -177,7 +171,6 @@ const getAppData = async (req, res) => {
       customer_id = customerRows[0].id;
     }
 
-    // Parallel fetch sliders, categories, products, brands
     const sliderPositions = [
       "homepage_top",
       "homepage_middle",
@@ -196,7 +189,6 @@ const getAppData = async (req, res) => {
       `SELECT * FROM products WHERE is_active = true ORDER BY sort_order DESC LIMIT 30`,
     ];
 
-    // Run slider and main queries parallelly
     const [
       topSlider,
       midSlider,
@@ -212,79 +204,88 @@ const getAppData = async (req, res) => {
       ...productsQueries.map((q) => connection.query(q)),
     ]);
 
-    // Collect all unique product IDs for batch variant & category fetch
-    const allProductLists = [
-      bestDealProducts,
-      homeAppliances,
-      featuredProducts,
-      allProducts,
+    // Deduplicate products by ID
+    const allFetchedProducts = [
+      ...bestDealProducts,
+      ...homeAppliances,
+      ...featuredProducts,
+      ...allProducts,
     ];
 
-    const productIdsSet = new Set();
-    allProductLists.forEach((list) =>
-      list.forEach((prod) => productIdsSet.add(prod.id))
-    );
-    const productIds = Array.from(productIdsSet);
-
-    // Fetch all variants for these products in one query
-    const [variantsRows] = await connection.query(
-      `SELECT v.*, p.*
-       FROM product_variants v
-       JOIN products p ON v.product_id = p.id
-       WHERE v.product_id IN (?)`,
-      [productIds]
-    );
-
-    // Fetch categories for products in one query
-    const [categoriesRows] = await connection.query(
-      `SELECT c.title, pc.product_id
-       FROM categories c
-       JOIN product_categories pc ON c.id = pc.category_id
-       WHERE pc.product_id IN (?)`,
-      [productIds]
-    );
-
-    // Map variants by product_id
-    const variantsMap = new Map();
-    for (const variant of variantsRows) {
-      if (!variantsMap.has(variant.product_id)) {
-        variantsMap.set(variant.product_id, []);
+    const uniqueProductsMap = new Map();
+    allFetchedProducts.forEach((prod) => {
+      if (!uniqueProductsMap.has(prod.id)) {
+        uniqueProductsMap.set(prod.id, prod);
       }
-      variantsMap.get(variant.product_id).push(variant);
+    });
+    const uniqueProducts = Array.from(uniqueProductsMap.values());
+
+    const productIds = uniqueProducts.map((p) => p.id);
+
+    // Fetch variants and deduplicate by variant ID
+    const variantsRows =
+      productIds.length > 0
+        ? (
+            await connection.query(
+              `SELECT * FROM product_variants WHERE product_id IN (?)`,
+              [productIds]
+            )
+          )[0]
+        : [];
+
+    // Deduplicate variants by variant ID (not product_id)
+    const uniqueVariantsMap = new Map();
+    variantsRows.forEach((variant) => {
+      if (!uniqueVariantsMap.has(variant.id)) {
+        uniqueVariantsMap.set(variant.id, variant);
+      }
+    });
+    const uniqueVariants = Array.from(uniqueVariantsMap.values());
+
+    const categoriesRows =
+      productIds.length > 0
+        ? (
+            await connection.query(
+              `SELECT c.title, pc.product_id FROM categories c JOIN product_categories pc ON c.id = pc.category_id WHERE pc.product_id IN (?)`,
+              [productIds]
+            )
+          )[0]
+        : [];
+
+    // Group unique variants by product_id
+    const variantsMap = new Map();
+    for (const variant of uniqueVariants) {
+      if (variant.product_id) {
+        if (!variantsMap.has(variant.product_id)) {
+          variantsMap.set(variant.product_id, []);
+        }
+        variantsMap.get(variant.product_id).push(variant);
+      }
     }
 
-    // Map categories by product_id
     const categoriesMap = new Map();
     for (const cat of categoriesRows) {
-      if (!categoriesMap.has(cat.product_id)) {
-        categoriesMap.set(cat.product_id, []);
+      if (cat.product_id) {
+        if (!categoriesMap.has(cat.product_id)) {
+          categoriesMap.set(cat.product_id, []);
+        }
+        categoriesMap.get(cat.product_id).push(cat.title);
       }
-      categoriesMap.get(cat.product_id).push(cat.title);
     }
 
-    // Modify products with variants & categories in-memory, no DB call inside loop
-    const modifiedFeatured = modifyProductResponse(
-      featuredProducts,
-      variantsMap,
-      categoriesMap
-    );
-    const modifiedBestDeals = modifyProductResponse(
-      bestDealProducts,
-      variantsMap,
-      categoriesMap
-    );
-    const modifiedHomeAppliances = modifyProductResponse(
-      homeAppliances,
-      variantsMap,
-      categoriesMap
-    );
-    const modifiedAllProducts = modifyProductResponse(
-      allProducts,
+    const modifiedProducts = modifyProductResponse(
+      uniqueProducts,
       variantsMap,
       categoriesMap
     );
 
-    // Get cart data if user logged in
+    const modifiedFeatured = modifiedProducts.filter((p) => p.is_featured);
+    const modifiedBestDeals = modifiedProducts.filter((p) => p.is_best_seller);
+    const modifiedHomeAppliances = modifiedProducts.filter(
+      (p) => p.product_type === "home_appliance"
+    );
+    const modifiedAllProducts = modifiedProducts;
+
     let cartItems = [];
     if (userId && customer_id) {
       cartItems = await getCartData(customer_id, connection);
@@ -319,4 +320,78 @@ const getAppData = async (req, res) => {
   }
 };
 
-export { getAppData };
+const searchFilterData = async (req, res) => {
+  const { searchString } = req.query;
+  const userId = req.userId;
+  const tenantID = req.tenantId;
+  const pool = pools[tenantID];
+  const connection = await pool.getConnection();
+
+  try {
+    if (!searchString) {
+      return res.status(400).json({
+        success: false,
+        message: "Search string is required",
+      });
+    }
+
+    const searchTerm = `%${searchString}%`;
+
+    // First, get matching products
+    const [products] = await connection.query(
+      `SELECT * FROM products 
+       WHERE product_name LIKE ? 
+       OR JSON_SEARCH(tags, 'one', ?) IS NOT NULL`,
+      [searchTerm, `%${searchString}%`]
+    );
+
+    if (products.length === 0) {
+      return res.status(200).json({
+        success: true,
+        message: "No products found",
+        data: [],
+      });
+    }
+
+    const productIds = products.map(p => p.id);
+
+    // Get variants for matched products
+    const [variants] = await connection.query(
+      `SELECT * FROM product_variants WHERE product_id IN (?)`,
+      [productIds]
+    );
+
+    // Group variants by product_id
+    const variantsMap = variants.reduce((acc, variant) => {
+      if (!acc[variant.product_id]) {
+        acc[variant.product_id] = [];
+      }
+      acc[variant.product_id].push(variant);
+      return acc;
+    }, {});
+
+    // Attach variants to products
+    const productsWithVariants = products.map(product => ({
+      ...product,
+      variants: variantsMap[product.id] || [],
+    }));
+
+    return res.status(200).json({
+      success: true,
+      message: "Search filter with variants applied successfully",
+      data: productsWithVariants,
+    });
+  } catch (error) {
+    console.error("Error in searchFilterData:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  } finally {
+    connection.release();
+  }
+};
+
+
+
+export { getAppData, searchFilterData };
