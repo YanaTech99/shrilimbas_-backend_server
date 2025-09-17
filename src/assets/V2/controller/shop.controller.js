@@ -676,6 +676,7 @@ const addProducts = async (req, res) => {
         "cost_price",
         "stock",
         "min_stock_alert",
+        "min_cart_value",
         "is_active",
         "is_deleted",
       ];
@@ -986,6 +987,7 @@ const updateProduct = async (req, res) => {
           "cost_price",
           "stock",
           "min_stock_alert",
+          "min_cart_value",
           "is_active",
           "is_deleted",
         ];
@@ -1548,6 +1550,7 @@ const addVariant = async (req, res) => {
 
 const getPaginatedproducts = async (req, res) => {
   const pool = pools[req.tenantId];
+  console.log("Tenant ID:", req.tenantId);
   const { id: user_id, user_type } = req.user;
 
   if (user_type !== "VENDOR") {
@@ -1563,6 +1566,7 @@ const getPaginatedproducts = async (req, res) => {
     search,
     order = "DESC",
   } = req.query;
+  console.log("Query params:", req.query);
 
   const offset = (parseInt(page) - 1) * parseInt(limit);
   try {
@@ -1579,6 +1583,7 @@ const getPaginatedproducts = async (req, res) => {
     // 🔹 Build dynamic WHERE
     let whereSQL = `p.shop_id = ? AND p.deleted_at IS NULL`;
     const whereValues = [shop.id];
+    console.log("Initial WHERE:", whereSQL, whereValues);
 
     if (status) {
       whereSQL += " AND p.is_active = ?";
@@ -1663,6 +1668,7 @@ const getPaginatedproducts = async (req, res) => {
               'cost_price', v.cost_price,
               'stock', v.stock,
               'min_stock_alert', v.min_stock_alert,
+              'min_cart_value', v.min_cart_value,
               'thumbnail', v.thumbnail,
               'gallery_images', v.gallery_images,
               'is_active', v.is_active,
@@ -1672,7 +1678,7 @@ const getPaginatedproducts = async (req, res) => {
             )
           )
           FROM product_variants v 
-          WHERE v.product_id = p.id AND v.deleted_at IS NULL
+          WHERE v.product_id = p.id AND v.is_deleted = 0
         ) as variants,
 
         -- total count
@@ -1682,6 +1688,8 @@ const getPaginatedproducts = async (req, res) => {
       `,
       [...whereValues, parseInt(limit), offset, ...whereValues]
     );
+
+    // console.log("Raw DB rows:", rows);
 
     if (!rows.length) {
       return res.json({
@@ -1757,6 +1765,8 @@ const getPaginatedproducts = async (req, res) => {
         variants,
       };
     });
+
+    // console.log("Fetched products:", data);
 
     return res.json({
       success: true,

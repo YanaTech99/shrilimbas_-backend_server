@@ -50,7 +50,7 @@ const addToCart = async (req, res) => {
     let variant = null;
     if (product_variant_id) {
       const [variantRows] = await connection.execute(
-        "SELECT id, sku, selling_price, stock FROM product_variants WHERE id = ? AND product_id = ?",
+        "SELECT id, sku, selling_price, stock, min_cart_value FROM product_variants WHERE id = ? AND product_id = ?",
         [product_variant_id, product_id]
       );
 

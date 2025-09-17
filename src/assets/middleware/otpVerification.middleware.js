@@ -14,6 +14,7 @@ const verifyOTP = async (req, res, next) => {
     `,
     [phone_number]
   );
+  console.log(existingUser);
 
   if (existingUser.length > 0 && existingUser[0].user_type !== user_type) {
     return res.status(400).json({
@@ -22,14 +23,14 @@ const verifyOTP = async (req, res, next) => {
     });
   }
 
-  if (otp_code === "123456") {
-    return next();
-  } else {
-    return res.status(400).json({
-      success: false,
-      error: "Invalid OTP",
-    });
-  }
+  // if (otp_code === "123456") {
+  //   return next();
+  // } else {
+  //   return res.status(400).json({
+  //     success: false,
+  //     error: "Invalid OTP",
+  //   });
+  // }
 
   try {
     // Fetch the latest OTP record for the phone number

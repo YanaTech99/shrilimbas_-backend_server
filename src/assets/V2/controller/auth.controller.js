@@ -1,4 +1,5 @@
 import pools from "../../db/index.js";
+import axios from "axios";
 import {
   generateAccessToken,
   verifyAccessToken,
@@ -11,10 +12,13 @@ import { generateOTP } from "../../utils/generateOTP.util.js";
 import bcrypt from "bcrypt";
 import { UAParser } from "ua-parser-js";
 import { defaultProfileUrl } from "../../../constants.js";
+import {poolUsername} from "../../helper/poolUsername.js";
 
 const sendOTP = async (req, res) => {
   const tenantId = req.tenantId;
   const pool = pools[req.tenantId];
+  const username = poolUsername[tenantId];
+
   if (!req.body.phone_number) {
     return res.status(400).json({
       success: false,
@@ -55,6 +59,8 @@ const sendOTP = async (req, res) => {
     `,
     [phone_number]
   );
+  console.log("user_type", user_type);
+  console.log("existingUser", existingUser);
 
   if (existingUser.length > 0 && existingUser[0].user_type !== user_type) {
     return res.status(400).json({
@@ -84,16 +90,6 @@ const sendOTP = async (req, res) => {
   const deviceType = ua.device.type || "desktop";
   const ipAddress = req.ip;
 
-  // Craft message
-  let deviceInfoMsg = "";
-  if (browserName || osName) {
-    deviceInfoMsg = `Trying to log in from ${browserName || "a browser"} on ${
-      osName || "an OS"
-    }`;
-  }
-
-  const message = `${deviceInfoMsg}. Your OTP is ${otp}.`;
-
   const client = await pool.getConnection();
 
   try {
@@ -105,15 +101,29 @@ const sendOTP = async (req, res) => {
       [phone_number, tenantId]
     );
 
+    const messageParams = `User,${otp},${username}`;
+    const sendOTPEndpoint = `https://www.bhashsms.com/api/sendmsgutil.php?user=YanaTechnology_bwap&pass=123456&sender=BUZWAP&phone=${phone_number}&text=login_pin&priority=wa&stype=normal&params=${messageParams}`;
+    console.log(sendOTPEndpoint);
+    // Send OTP via API
+    const sendResponse = await axios.get(sendOTPEndpoint);
+
+    // Check API response (optional: customize as per API response structure)
+    if (sendResponse.status !== 200 || sendResponse.data.includes("error")) {
+      return res.status(500).json({
+        success: false,
+        error: "Failed to send OTP via SMS service",
+      });
+    }
+
     if (checkOTPRecords.length > 0) {
-      //update everything
+      // Update existing OTP record
       const [updateResult] = await client.execute(
         `
         UPDATE otp_requests
         SET otp_code = ?,
-        user_agent = ?, browser_name = ?, browser_version = ?,
-        os_name = ?, os_version = ?, device_type = ?,
-        ip_address = ?, expires_at = ?
+            user_agent = ?, browser_name = ?, browser_version = ?,
+            os_name = ?, os_version = ?, device_type = ?,
+            ip_address = ?, expires_at = ?
         WHERE phone_number = ?
         `,
         [
@@ -144,7 +154,7 @@ const sendOTP = async (req, res) => {
       });
     }
 
-    // Insert into database
+    // Insert new OTP record
     const [result] = await client.execute(
       `
       INSERT INTO otp_requests (
@@ -176,8 +186,6 @@ const sendOTP = async (req, res) => {
         error: "Failed to send OTP",
       });
     }
-
-    // Send OTP via SMS logic will come here
 
     return res.status(200).json({
       success: true,

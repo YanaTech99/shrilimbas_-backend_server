@@ -76,6 +76,7 @@ const placeOrder = async (req, res) => {
           pv.base_price AS variant_base_price,
           pv.selling_price AS variant_selling_price,
           pv.cost_price AS variant_cost_price,
+          pv.min_cart_value AS min_cart_value,
           pv.stock AS variant_stock
         FROM products p
         LEFT JOIN product_variants pv ON p.id = pv.product_id
@@ -131,6 +132,7 @@ const placeOrder = async (req, res) => {
               size: product.variant_size,
               material: product.variant_material,
               thumbnail: product.variant_thumbnail,
+              min_cart_value: product.min_cart_value,
               gallery_images:
                 product.variant_gallery_images &&
                 typeof product.variant_gallery_images === "string"

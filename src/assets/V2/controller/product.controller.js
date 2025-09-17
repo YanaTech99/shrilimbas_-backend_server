@@ -219,9 +219,10 @@ const getPaginatedProducts = async (req, res) => {
     );
 
     const [variants] = await pool.query(
-      `SELECT * FROM product_variants WHERE product_id IN (?)`,
+      `SELECT * FROM product_variants WHERE product_id IN (?) AND is_deleted = 0`,
       [productIds]
     );
+    console.log("variants",variants);
 
     // 🔹 4. Map results
     const categoryMap = categories.reduce((acc, row) => {
