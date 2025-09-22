@@ -144,7 +144,7 @@ const verifyPayment = async (req, res) => {
 
   // update order details
   const [updateOrder] = await pool.execute(
-    `UPDATE orders SET order_status = 'shipped', payment_method = ?, payment_status = 'paid', payment_id = ? WHERE id = ?`,
+  `UPDATE orders SET payment_method = ?, payment_status = 'paid', payment_id = ? WHERE id = ?`,
     [existingTransaction[0].payment_method, transaction_id, order_id]
   );
 

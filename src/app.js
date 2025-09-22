@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import { multiTenantMiddleware } from "./assets/middleware/multiTenant.middlerware.js";
+import morgan from "morgan";
 
 const app = express();
 
@@ -22,6 +23,8 @@ app.use((req, res, next) => {
     next();
   }
 });
+
+app.use(morgan("dev"))
 
 app.use(express.static("public"));
 

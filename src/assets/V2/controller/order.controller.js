@@ -40,6 +40,8 @@ const placeOrder = async (req, res) => {
       notes,
     } = req.body;
 
+    console.log("req.body", req.body);
+
     if (!items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({
         success: false,

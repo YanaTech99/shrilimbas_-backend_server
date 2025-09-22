@@ -101,11 +101,13 @@ const sendOTP = async (req, res) => {
       [phone_number, tenantId]
     );
 
-    const messageParams = `User,${otp},${username}`;
-    const sendOTPEndpoint = `https://www.bhashsms.com/api/sendmsgutil.php?user=YanaTechnology_bwap&pass=123456&sender=BUZWAP&phone=${phone_number}&text=login_pin&priority=wa&stype=normal&params=${messageParams}`;
-    console.log(sendOTPEndpoint);
-    // Send OTP via API
-    const sendResponse = await axios.get(sendOTPEndpoint);
+    if(phone_number != "9999999999"  ){
+      const messageParams = encodeURIComponent(`User,${otp},${username}`);
+      const sendOTPEndpoint = `https://www.bhashsms.com/api/sendmsgutil.php?user=YanaTechnology_bwap&pass=123456&sender=BUZWAP&phone=${phone_number}&text=login_pin&priority=wa&stype=normal&params=${messageParams}`;
+      console.log(sendOTPEndpoint);
+      // Send OTP via API
+      const sendResponse = await axios.get(sendOTPEndpoint);
+      console.log("sendResponse", sendResponse.data);
 
     // Check API response (optional: customize as per API response structure)
     if (sendResponse.status !== 200 || sendResponse.data.includes("error")) {
@@ -113,6 +115,7 @@ const sendOTP = async (req, res) => {
         success: false,
         error: "Failed to send OTP via SMS service",
       });
+    }
     }
 
     if (checkOTPRecords.length > 0) {

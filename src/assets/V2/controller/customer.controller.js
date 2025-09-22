@@ -205,6 +205,8 @@ const addNewAddress = async (req, res) => {
     postal_code,
     country,
     address_type,
+    latitude,
+    longitude,
   } = modifiedInput.address;
 
   const client = await pool.getConnection();
@@ -223,8 +225,9 @@ const addNewAddress = async (req, res) => {
     if (postal_code) insertQuery.push("postal_code");
     if (country) insertQuery.push("country");
     if (address_type) insertQuery.push("address_type");
-
-    insertQuery.forEach((column, index) => {
+    if (latitude) insertQuery.push("latitude");
+    if (longitude) insertQuery.push("longitude");
+    insertQuery.forEach((column) => {
       values.push(modifiedInput.address[column]);
     });
 
@@ -353,6 +356,8 @@ const updateAddress = async (req, res) => {
     postal_code,
     country,
     address_type,
+    latitude,
+    longitude,
   } = modifiedInput.address;
 
   const client = await pool.getConnection();
@@ -370,7 +375,8 @@ const updateAddress = async (req, res) => {
     if (postal_code) updateQuery.push(`postal_code = '${postal_code}'`);
     if (country) updateQuery.push(`country = '${country}'`);
     if (address_type) updateQuery.push(`address_type = '${address_type}'`);
-
+    if (latitude) updateQuery.push(`latitude = '${latitude}'`);
+    if (longitude) updateQuery.push(`longitude = '${longitude}'`);
     const [result] = await client.query(
       `UPDATE addresses SET ${updateQuery.join(
         ", "
