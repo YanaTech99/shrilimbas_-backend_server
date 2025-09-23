@@ -296,6 +296,8 @@ const getAppData = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: "App data fetched successfully",
+      app_version: process.env.APP_VERSION,
+      ipa_version: process.env.IPA_VERSION,
       data: {
         topSlider: topSlider || {},
         categories0: safe(allCategories),

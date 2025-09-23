@@ -303,4 +303,122 @@ const getPaginatedProducts = async (req, res) => {
   }
 };
 
-export { getPaginatedCategories, getPaginatedBrands, getPaginatedProducts };
+const getCategoryProductById = async (req, res) => {
+  const pool = pools[req.tenantId];
+  const { product_id, category_id } = req.query;
+
+  try {
+    if (product_id) {
+      // 🔹 Fetch single product
+      const [products] = await pool.query(
+        `SELECT * FROM products WHERE id = ? AND deleted_at IS NULL AND is_deleted = FALSE AND is_active = TRUE`,
+        [product_id]
+      );
+
+      if (!products.length) {
+        return res.json({ success: false, message: "Product not found" });
+      }
+
+      const product = products[0];
+
+      // 🔹 Fetch product categories
+      const [categories] = await pool.query(
+        `SELECT c.title 
+         FROM product_categories pc 
+         JOIN categories c ON pc.category_id = c.id 
+         WHERE pc.product_id = ?`,
+        [product.id]
+      );
+
+      // 🔹 Fetch product variants
+      const [variants] = await pool.query(
+        `SELECT * FROM product_variants WHERE product_id = ?`,
+        [product.id]
+      );
+
+      // 🔹 Prepare response
+      const productVariants = variants.map((v) => {
+        return {
+          ...v,
+          gallery_images:
+            typeof v.gallery_images === "string"
+              ? JSON.parse(v.gallery_images)
+              : v.gallery_images || [],
+          finalAmmount:
+            (parseFloat(v.selling_price) || 0) -
+            (parseFloat(product.discount) || 0) +
+            (parseFloat(product.tax_percentage) || 0),
+        };
+      });
+
+      const mainVariant = productVariants[0];
+      const fields = [
+        "specifications",
+        "tags",
+        "attributes",
+        "custom_fields",
+        "gallery_images",
+      ];
+      for (const field of fields) {
+        if (product[field]) {
+          product[field] =
+            typeof product[field] === "string"
+              ? JSON.parse(product[field])
+              : product[field];
+        }
+      }
+
+      const response = {
+        ...product,
+        categories: categories.map((c) => c.title),
+        thumbnail: mainVariant?.thumbnail || "",
+        gallery_images: mainVariant?.gallery_images || [],
+        variants: productVariants,
+        finalAmmount:
+          (parseFloat(mainVariant?.selling_price) || 0) -
+          (parseFloat(product.discount) || 0) +
+          (parseFloat(product.tax_percentage) || 0),
+      };
+
+      return res.status(200).json({
+        success: true,
+        message: "Product fetched successfully.",
+        type: "product",
+        data: response,
+      });
+    }
+
+    if (category_id) {
+      // 🔹 Fetch category
+      const [categories] = await pool.query(
+        `SELECT * FROM categories WHERE id = ?`,
+        [category_id]
+      );
+
+      if (!categories.length) {
+        return res.status(200).json({ success: false, message: "Category not found", data: [] });
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: "Category fetched successfully.",
+        type: "category",
+        data: categories[0],
+      });
+    }
+
+    return res.status(200).json({
+      success: false,
+      message: "Please provide either product_id or category_id",
+    });
+  } catch (err) {
+    console.error("getCategoryProductById error:", err.message);
+    return res.status(500).json({
+      success: false,
+      error: "Failed to fetch data",
+    });
+  }
+};
+
+
+export { getPaginatedCategories, getPaginatedBrands, getPaginatedProducts, getCategoryProductById };
