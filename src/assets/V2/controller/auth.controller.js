@@ -104,7 +104,7 @@ const sendOTP = async (req, res) => {
       [phone_number, tenantId]
     );
 
-    if(phone_number != "9999999999"  ){
+    if(phone_number != "9999999999" && tenantId != "otkhzjwq" ){
       const messageParams = encodeURIComponent(`User,${otp},${username}`);
       const sendOTPEndpoint = `https://www.bhashsms.com/api/sendmsgutil.php?user=YanaTechnology_bwap&pass=123456&sender=BUZWAP&phone=${phone_number}&text=login_pin&priority=wa&stype=normal&params=${messageParams}`;
       console.log(sendOTPEndpoint);
