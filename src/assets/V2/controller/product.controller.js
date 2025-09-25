@@ -420,5 +420,4 @@ const getCategoryProductById = async (req, res) => {
   }
 };
 
-
 export { getPaginatedCategories, getPaginatedBrands, getPaginatedProducts, getCategoryProductById };

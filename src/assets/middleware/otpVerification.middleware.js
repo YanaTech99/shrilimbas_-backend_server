@@ -104,13 +104,9 @@ const verifyOTP = async (req, res, next) => {
       });
     }
 
-    // Mark OTP as used and verified
+    // ✅ Delete OTP after successful verification (avoid double verify issue)
     await pool.execute(
-      `
-      UPDATE otp_requests
-      SET is_used = TRUE, is_verified = TRUE
-      WHERE id = ?
-    `,
+      `DELETE FROM otp_requests WHERE id = ?`,
       [otpRecord.id]
     );
 

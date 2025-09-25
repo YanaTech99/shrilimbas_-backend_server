@@ -58,6 +58,8 @@ const updateProfile = async (req, res) => {
     firm_name,
     gst_number,
     address = {},
+    gst_shop_name,
+    gst_shop_address,
   } = modifiedInput;
 
   let uploadedImage = null;
@@ -86,6 +88,8 @@ const updateProfile = async (req, res) => {
 
   if (firm_name) updateQuery.push(`firm_name = '${firm_name}'`); // Update firm_name if provided
   if (gst_number) updateQuery.push(`gst_number = '${gst_number}'`); // Update gst_number if provided
+  if (gst_shop_name) updateQuery.push(`gst_shop_name = '${gst_shop_name}'`); // Update gst_shop_name if provided
+  if (gst_shop_address) updateQuery.push(`gst_shop_address = '${gst_shop_address}'`); // Update gst_shop_address if provided
 
   const client = await pool.getConnection();
 

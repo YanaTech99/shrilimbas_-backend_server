@@ -62,11 +62,14 @@ const sendOTP = async (req, res) => {
   console.log("user_type", user_type);
   console.log("existingUser", existingUser);
 
-  if (existingUser.length > 0 && existingUser[0].user_type !== user_type) {
-    return res.status(400).json({
-      success: false,
-      error: "User already exists",
-    });
+  if (existingUser.length > 0) {
+    if (existingUser[0].user_type !== user_type) {
+      return res.status(400).json({
+        success: false,
+        error: "Phone number already registered with another user type",
+      });
+    }
+    // Same user_type -> allow OTP send for login
   }
 
   const userAgent = req.headers["user-agent"] || "";
