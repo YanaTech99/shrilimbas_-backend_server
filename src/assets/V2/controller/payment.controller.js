@@ -1,5 +1,5 @@
 import pools from "../../db/index.js";
-import { razorpay } from "../../paymentConfig/index.js";
+import { getRazorpayInstance, getRazorpayKeys } from "../../paymentConfig/index.js";
 import crypto from "crypto";
 import { saveTransaction } from "../../helper/saveTransaction.js";
 
@@ -44,7 +44,11 @@ const createOrder = async (req, res) => {
       receipt,
     };
 
+    const razorpay = await getRazorpayInstance(tenantId);
+
     const order = await razorpay.orders.create(options);
+
+    const razorpayKeys = await getRazorpayKeys(tenantId);
 
     if (!order.error) {
       const transactionData = {
@@ -81,7 +85,8 @@ const createOrder = async (req, res) => {
         status: order.status,
         created_at: order.created_at,
       },
-      key: process.env.RAZORPAY_KEY_ID,
+      key: razorpayKeys.key_id,
+      razorpay_logo: razorpayKeys.razor_pay_logo,
     });
   } catch (error) {
     console.error("Error creating Razorpay order:", error);
@@ -108,8 +113,10 @@ const verifyPayment = async (req, res) => {
       .json({ success: false, error: "Missing payment data" });
   }
 
+  const razorpayKeys = await getRazorpayKeys(tenantId);
+
   const generatedSignature = crypto
-    .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
+    .createHmac("sha256", razorpayKeys.key_secret)
     .update(`${razorpay_order_id}|${razorpay_payment_id}`)
     .digest("hex");
 
@@ -144,7 +151,7 @@ const verifyPayment = async (req, res) => {
 
   // update order details
   const [updateOrder] = await pool.execute(
-  `UPDATE orders SET payment_method = ?, payment_status = 'paid', payment_id = ? WHERE id = ?`,
+  `UPDATE orders SET order_status = 'order_placed', payment_method = ?, payment_status = 'paid', payment_id = ? WHERE id = ?`,
     [existingTransaction[0].payment_method, transaction_id, order_id]
   );
 

@@ -7,6 +7,8 @@ import {
   getEarnings,
   getProfile,
   getActiveOrders,
+  getDeliveryBoyList,
+  deliveryBoyVerification,
 } from "../controller/delivery_boy.controller.js";
 import { authenticateToken } from "../../middleware/auth.middleware.js";
 import { upload } from "../../middleware/multer.middleware.js";
@@ -35,5 +37,9 @@ router.route("/getEarnings").get(authenticateToken, getEarnings);
 router.route("/getProfile").get(authenticateToken, getProfile);
 
 router.route("/getActiveOrders").get(authenticateToken, getActiveOrders);
+
+router.route("/getDeliveryBoyList").get(authenticateToken, getDeliveryBoyList);
+
+router.route("/deliveryBoyVerification").post(authenticateToken, deliveryBoyVerification);
 
 export default router;

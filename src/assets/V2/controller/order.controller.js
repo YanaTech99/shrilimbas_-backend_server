@@ -397,28 +397,9 @@ const placeOrder = async (req, res) => {
 const updateStatus = async (req, res) => {
   const pool = pools[req.tenantId];
   const { id: user_id, user_type } = req.user;
-
-  if (user_type !== "VENDOR") {
-    return res.status(403).json({
-      success: false,
-      error: "Forbidden: Only vendors can update order status.",
-    });
-  }
-
-  const [shop_id] = await pool.execute(
-    `SELECT id FROM shops WHERE user_id = ?`,
-    [user_id]
-  );
-
-  if (!shop_id || shop_id[0].length === 0) {
-    return res.status(404).json({
-      success: false,
-      error: "Shop not found",
-    });
-  }
-
   const { order_number, status } = req.body;
 
+  // Validate order_number
   if (!order_number || order_number === "" || order_number === "undefined") {
     return res.status(400).json({
       success: false,
@@ -426,6 +407,7 @@ const updateStatus = async (req, res) => {
     });
   }
 
+  // Validate status
   if (!status || status === "" || status === "undefined") {
     return res.status(400).json({
       success: false,
@@ -433,14 +415,44 @@ const updateStatus = async (req, res) => {
     });
   }
 
+  // Check permissions
+  if (user_type === "CUSTOMER" && status !== "cancelled") {
+    return res.status(403).json({
+      success: false,
+      error: "Forbidden: Customers can only cancel orders.",
+    });
+  }
+
+  if (user_type !== "VENDOR" && user_type !== "CUSTOMER") {
+    return res.status(403).json({
+      success: false,
+      error: "Forbidden: Only vendors or customers can update order status.",
+    });
+  }
+
+  // Vendor must have a shop
+  let shopId = null;
+  if (user_type === "VENDOR") {
+    const [shopRows] = await pool.execute(
+      `SELECT id FROM shops WHERE user_id = ?`,
+      [user_id]
+    );
+
+    if (!shopRows || shopRows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: "Shop not found",
+      });
+    }
+    shopId = shopRows[0].id;
+  }
+
   const connection = await pool.getConnection();
 
   try {
     // Get order
-    const [orderRows] = await connection.execute(
-      `SELECT id FROM orders WHERE order_number = ? AND shop_id = ?`,
-      [order_number, shop_id[0].id]
-    );
+    let query = `SELECT id, shop_id FROM orders WHERE order_number = ?`;
+    const [orderRows] = await connection.execute(query, [order_number]);
 
     if (orderRows.length === 0) {
       return res.status(404).json({
@@ -449,12 +461,27 @@ const updateStatus = async (req, res) => {
       });
     }
 
-    const orderId = orderRows[0].id;
+    const order = orderRows[0];
+
+    // Vendor can only update orders from their own shop
+    if (user_type === "VENDOR" && order.shop_id !== shopId) {
+      return res.status(403).json({
+        success: false,
+        error: "Forbidden: You can only update your own shop's orders.",
+      });
+    }
 
     // Update order status
     await connection.execute(
-      `UPDATE orders SET status_history = JSON_ARRAY_APPEND(status_history, '$', JSON_OBJECT('status', ?, 'timestamp', NOW())), order_status = ? WHERE id = ?`,
-      [status, status, orderId]
+      `UPDATE orders 
+       SET status_history = JSON_ARRAY_APPEND(
+             status_history, 
+             '$', 
+             JSON_OBJECT('status', ?, 'timestamp', NOW())
+           ), 
+           order_status = ? 
+       WHERE id = ?`,
+      [status, status, order.id]
     );
 
     return res.status(200).json({

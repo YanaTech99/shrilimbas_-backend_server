@@ -10,6 +10,7 @@ export const bannersFolder = "banners";
 export const categoryImageFolder = "categories";
 export const bannerImageFolder = "banners";
 export const logoImageFolder = "logoImage";
+export const pagesFolder = "pages";
 export const delivery_boyFolder = {
   profile_image: "delivery-boy/profile_image",
   photo_id: "delivery-boy/photo_id",

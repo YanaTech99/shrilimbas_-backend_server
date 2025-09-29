@@ -10,15 +10,19 @@ import { defaultProfileUrl, delivery_boyFolder } from "../../../constants.js";
 const updateProfile = async (req, res) => {
   const tenantId = req.tenantId;
   const pool = pools[tenantId];
-  const { id: user_id } = req.user;
+  const { id: user_id,user_type } = req.user;
+  const {user_id : id} = req.body; 
+  console.log(user_id, id);
 
   const files = req.files || {}; // Expect multiple files from multer
   const client = await pool.getConnection();
 
+  const deliveryBoyId = user_type === "VENDOR" ? id : user_id;
+
   try {
     const [rows] = await pool.query(
       `SELECT * FROM delivery_boys WHERE user_id = ? LIMIT 1`,
-      [user_id]
+      [deliveryBoyId]
     );
 
     if (!rows || rows.length === 0) {
@@ -432,7 +436,7 @@ const getEarnings = async (req, res) => {
   );
 
   if (!deliveryBoy || deliveryBoy.length === 0) {
-    return res.status(404).json({
+    return res.status(403).json({
       success: false,
       error: "Delivery boy not found",
     });
@@ -444,9 +448,13 @@ const getEarnings = async (req, res) => {
   );
 
   if (!earnings || earnings.length === 0) {
-    return res.status(404).json({
+    return res.status(200).json({
       success: false,
-      error: "Earnings not found",
+      message: "Earnings not found",
+      data: [],
+      total_orders: 0,
+      total_earnings: 0,
+      total_deliveries: 0,
     });
   }
 
@@ -462,11 +470,14 @@ const getEarnings = async (req, res) => {
 
 const getProfile = async (req, res) => {
   const pool = pools[req.tenantId];
-  const { id: user_id } = req.user;
+  const { id: user_id, user_type } = req.user;
+  const {id} = req.query
+
+  const deliveryBoyId = user_type === "DELIVERY_BOY" ? user_id : id;
 
   const [deliveryBoy] = await pool.query(
     `SELECT * FROM delivery_boys WHERE user_id = ?`,
-    [user_id]
+    [deliveryBoyId]
   );
 
   if (!deliveryBoy || deliveryBoy.length === 0) {
@@ -518,6 +529,114 @@ const getActiveOrders = async (req, res) => {
   });
 };
 
+const getDeliveryBoyList = async (req, res) => {
+  console.log(req.tenantId);
+  const pool = pools[req.tenantId];
+  const { user_type } = req.user;
+
+  if (user_type !== "VENDOR") {
+    return res.status(403).json({ success: false, error: "Unauthorized" });
+  }
+
+  try {
+    // Query params
+    let { page = 1, limit = 10, search = "", is_active, gender } = req.query;
+    page = parseInt(page);
+    limit = parseInt(limit);
+    const offset = (page - 1) * limit;
+
+    // Base query
+    let baseQuery = `FROM delivery_boys WHERE 1=1`;
+    const params = [];
+
+    // Search filter
+    if (search) {
+      baseQuery += ` AND (name LIKE ? OR email LIKE ? OR user_id LIKE ?)`;
+      params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+    }
+
+    // Status filter
+    if (is_active !== undefined) {
+      baseQuery += ` AND is_active = ?`;
+      params.push(is_active);
+    }
+
+    // Gender filter
+    if (gender) {
+      baseQuery += ` AND gender = ?`;
+      params.push(gender);
+    }
+
+    // Get total count
+    const [countRows] = await pool.query(`SELECT COUNT(*) as total ${baseQuery}`, params);
+    const total = countRows[0].total;
+
+    // Get paginated results
+    const [deliveryBoys] = await pool.query(
+      `SELECT uuid,user_id,name,email,is_active,profile_image_url,gender,rating ${baseQuery} LIMIT ? OFFSET ?`,
+      [...params, limit, offset]
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "Delivery boys fetched successfully",
+      data: deliveryBoys,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching delivery boys:", error);
+    return res.status(500).json({ success: false, error: "Internal server error" });
+  }
+};
+
+const deliveryBoyVerification = async(req,res)=>{
+  const pool = pools[req.tenantId];
+  const { user_type } = req.user;
+  const {user_id} = req.body
+
+  if(user_type !== "VENDOR") {
+    return res.status(403).json({ success: false, error: "Unauthorized" });
+  }
+  const {is_active, email_verified, phone_verified} = req.body;
+  let updateFields = [];
+  let updateUserFields = [];
+  let values = [];
+
+  if(is_active !== undefined) {
+    updateFields.push("is_active = ?");
+    updateUserFields.push("is_active = ?")
+    values.push(is_active);
+  }
+  if(email_verified !== undefined) {
+    updateFields.push("email_verified = ?");
+    updateUserFields.push("is_email_verified = ?")
+    values.push(email_verified);
+  }
+  if(phone_verified !== undefined) {
+    updateFields.push("phone_verified = ?");
+    updateUserFields.push("is_phone_verified = ?")
+    values.push(phone_verified);
+  }
+
+  if(updateFields.length === 0) {
+    return res.status(400).json({ success: false, error: "No fields provided for update" });
+  }
+
+  try {
+    const [result] = await pool.query(`UPDATE delivery_boys SET ${updateFields.join(", ")} WHERE user_id = ?`, [...values, user_id]);
+    const [userResult] = await pool.query(`UPDATE users SET ${updateUserFields.join(", ")} WHERE id = ?`, [...values, user_id]);
+    return res.status(200).json({ success: true, message: "Delivery boy verified successfully" });
+  } catch (error) {
+    return res.status(500).json({ success: false, error: "Internal server error" });
+  }
+
+}
+
 export {
   updateProfile,
   getOrders,
@@ -526,4 +645,6 @@ export {
   getEarnings,
   getProfile,
   getActiveOrders,
+  getDeliveryBoyList,
+  deliveryBoyVerification,
 };

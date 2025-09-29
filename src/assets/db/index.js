@@ -1,6 +1,6 @@
 import mysql from "mysql2/promise";
 
-const shrilimbasConfig = {
+const powerManConfig = {
   database: process.env.SHRILIMBAS_DB_NAME, // Use the DB_HOST from .env or default to 'localhost'
   host: process.env.SHRILIMBAS_DB_HOST, // Use the DB_PORT from .env or default to 3306
   user: process.env.SHRILIMBAS_DB_USER,
@@ -16,7 +16,7 @@ const toolbizzConfig = {
   port: process.env.TOOLBIZZ_DB_PORT,
 };
 
-const shrilimbasNewConfig = {
+const shrilimbasConfig = {
   database: process.env.SHRILIMBAS_NEW_DB_NAME, // Use the DB_HOST from .env or default to 'localhost'
   host: process.env.SHRILIMBAS_NEW_DB_HOST, // Use the DB_PORT from .env or default to 3306
   user: process.env.SHRILIMBAS_NEW_DB_USER,
@@ -24,14 +24,14 @@ const shrilimbasNewConfig = {
   port: process.env.SHRILIMBAS_NEW_DB_PORT,
 };
 
-const shrilimbasPool = mysql.createPool(shrilimbasConfig);
+const powerManPool = mysql.createPool(powerManConfig);
 const toolbizzPool = mysql.createPool(toolbizzConfig);
-const shrilimbasNewPool = mysql.createPool(shrilimbasNewConfig);
+const shrilimbasPool = mysql.createPool(shrilimbasConfig);
 
 const dbPools = {
   otkhzjwq: toolbizzPool,
-  xnprapms: shrilimbasPool,
-  bjxdtyyy: shrilimbasNewPool,
+  xnprapms: powerManPool,
+  bjxdtyyy: shrilimbasPool,
 };
 
 export default dbPools;
