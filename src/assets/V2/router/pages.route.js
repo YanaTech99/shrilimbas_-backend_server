@@ -7,7 +7,7 @@ const router = Router();
 
 router.route("/insertPage").post(authenticateToken,upload.single("page_image"), insertPage);
 router.route("/updatePage/:id").put(authenticateToken,upload.single("page_image"), updatePage);
-router.route("/listPages").get(authenticateToken,listPages);
-router.route("/getPageById").get(authenticateToken,getPageById);
+router.route("/listPages").get(listPages);
+router.route("/getPageById").get(getPageById);
 
 export default router;
