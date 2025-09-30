@@ -8,6 +8,7 @@ const insertPage = async (req, res) => {
     const pool = pools[tenantId];
     let pageImage = req.file || null;
     const { id: user_id, user_type } = req.user;
+    console.log("user_id---",req.user)
   
     const { page_name, title, description, status } = req.body;
 
@@ -26,11 +27,13 @@ const insertPage = async (req, res) => {
       const { secure_url } = await uploadImageToCloudinary(pageImage.path, tenantId, pagesFolder);
       pageImage = secure_url;
     }
+
+    console.log("reqBody---",req.body)
   
     try {
       const [result] = await pool.query(
         `INSERT INTO pages (page_name, title, page_image, description, status, created_by)
-         VALUES (?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?)`,
         [page_name, title, pageImage, description || null, status || "active", user_id]
       );
   
@@ -145,7 +148,7 @@ const updatePage = async (req, res) => {
         error: "Failed to update page",
       });
     }
-  };
+};
   
   
   const listPages = async (req, res) => { 
