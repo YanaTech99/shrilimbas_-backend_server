@@ -1,6 +1,8 @@
 import pools from "../../db/index.js";
 import { generateInvoicePDF } from "../../utils/generateInvoice.util.js";
 import { uploadInvoiceToCloudinary } from "../../utils/cloudinary.util.js";
+import PorterService from "../../services/porter.service.js";
+import NotificationService from "../../services/notification.service.js";
 import fs from "fs";
 import crypto from "crypto";
 
@@ -376,11 +378,98 @@ const placeOrder = async (req, res) => {
       });
     }
 
+    const porterApiKey = process.env[`PORTER_API_KEY_${tenantId}`] || process.env.PORTER_API_KEY;
+    let porterOrderData = null;
+
+    if (porterApiKey) {
+      try {
+        const porterService = new PorterService(porterApiKey);
+
+        const [shopAddress] = await pool.execute(
+          `SELECT a.* FROM addresses a
+           JOIN shops s ON s.address_id = a.id
+           WHERE s.id = ?`,
+          [shop_id]
+        );
+
+        if (shopAddress && shopAddress.length > 0) {
+          const pickup = shopAddress[0];
+          const porterResult = await porterService.createOrder({
+            pickupDetails: {
+              address: pickup.address_line1,
+              landmark: pickup.landmark || "",
+              city: pickup.city,
+              state: pickup.state,
+              postal_code: pickup.postal_code,
+              country: pickup.country,
+              latitude: pickup.latitude,
+              longitude: pickup.longitude,
+              contact_name: orderData.customer.name || "Shop",
+              phone_number: customer.alternate_phone || customer.phone || "9999999999",
+            },
+            dropDetails: {
+              address: delivery_address,
+              landmark: "",
+              city: delivery_city,
+              state: delivery_state,
+              postal_code: delivery_postal_code,
+              country: delivery_country,
+              latitude: delivery_latitude,
+              longitude: delivery_longitude,
+              contact_name: orderData.customer.name,
+              phone_number: customer.alternate_phone || customer.phone || "9999999999",
+              instructions: delivery_instructions || "",
+            },
+            customerId: user_id.toString(),
+            orderNumber: order_number,
+            itemDetails: {
+              order_value: totalAmount,
+              items: orderItems.map(item => ({
+                name: JSON.parse(item.product_snapshot).product_name,
+                quantity: item.quantity,
+              })),
+            },
+          });
+
+          if (porterResult.success) {
+            porterOrderData = porterResult.data;
+            await connection.execute(
+              `UPDATE orders SET
+               porter_order_id = ?,
+               porter_tracking_url = ?,
+               order_status = 'order_placed'
+               WHERE id = ?`,
+              [
+                porterResult.data.order_id || order_number,
+                porterResult.data.tracking_url || "",
+                orderId,
+              ]
+            );
+
+            await NotificationService.notifyOrderStatus(
+              tenantId,
+              orderId,
+              "order_placed",
+              {
+                porter_order_id: porterResult.data.order_id,
+                tracking_url: porterResult.data.tracking_url,
+              }
+            );
+          }
+        }
+      } catch (porterError) {
+        console.error("Porter Integration Error:", porterError);
+      }
+    }
+
     return res.status(201).json({
       success: true,
       message: "Order placed successfully",
       pdfUrl: cloudinaryUrl,
-      data: orderData,
+      data: {
+        ...orderData,
+        porter: porterOrderData,
+      },
     });
   } catch (err) {
     await connection.rollback();
@@ -473,16 +562,24 @@ const updateStatus = async (req, res) => {
 
     // Update order status
     await connection.execute(
-      `UPDATE orders 
+      `UPDATE orders
        SET status_history = JSON_ARRAY_APPEND(
-             status_history, 
-             '$', 
+             status_history,
+             '$',
              JSON_OBJECT('status', ?, 'timestamp', NOW())
-           ), 
-           order_status = ? 
+           ),
+           order_status = ?
        WHERE id = ?`,
       [status, status, order.id]
     );
+
+    await connection.execute(
+      `INSERT INTO order_status_history (order_id, status, description, updated_by, created_at)
+       VALUES (?, ?, ?, ?, NOW())`,
+      [order.id, status, `Status updated by ${user_type}`, user_id]
+    );
+
+    await NotificationService.notifyOrderStatus(req.tenantId, order.id, status);
 
     return res.status(200).json({
       success: true,

@@ -69,6 +69,7 @@ import paymentRoutesV2 from "./assets/V2/router/payment.route.js";
 import settingRoutesV2 from "./assets/V2/router/setting.route.js";
 import deliveryBoyRoutesV2 from "./assets/V2/router/delivery_boy.route.js";
 import pagesRoutesV2 from "./assets/V2/router/pages.route.js";
+import porterRoutesV2 from "./assets/V2/router/porter.route.js";
 
 // define routes
 app.use("/api/v2/auth", multiTenantMiddleware, authRoutesV2);
@@ -83,6 +84,7 @@ app.use("/api/v2/payment", multiTenantMiddleware, paymentRoutesV2);
 app.use("/api/v2/setting", multiTenantMiddleware, settingRoutesV2);
 app.use("/api/v2/delivery-boy", multiTenantMiddleware, deliveryBoyRoutesV2);
 app.use("/api/v2/pages", multiTenantMiddleware, pagesRoutesV2);
+app.use("/api/v2/porter", multiTenantMiddleware, porterRoutesV2);
 // ****************** V2 API ******************
 
 // ✅ Error-handling middleware
