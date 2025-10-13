@@ -117,14 +117,16 @@ const placeOrder = async (req, res) => {
       const discount = 0;
 
       const lineTotal = price * item.quantity;
+      const taxAmount = (lineTotal * tax) / 100;
       subTotal += lineTotal;
-      tax_subtotal += tax * item.quantity;
+      tax_subtotal += taxAmount;
 
       orderItems.push({
         ...item,
         price_per_unit: price,
         discount_per_unit: discount || 0,
         tax_per_unit: tax,
+        tax_amount: taxAmount,
         sku: product.sku || "",
         product_snapshot: JSON.stringify(product),
         variant_snapshot: product.variant_id

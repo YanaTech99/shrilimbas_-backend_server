@@ -19,6 +19,7 @@ import {
   updateCategory,
   updateProduct,
   updateShop,
+  updateShopStatus,
 } from "../controller/shop.controller.js";
 import { authenticateToken } from "../../middleware/auth.middleware.js";
 import { upload } from "../../middleware/multer.middleware.js";
@@ -67,6 +68,7 @@ router.route("/getUsers").get(authenticateToken, getUsers);
 
 router.route("/softDeleteProduct").delete(authenticateToken, softDeleteProduct);
 router.route("/softDeleteVariant").delete(authenticateToken, softDeleteVariant);
+router.route("/shopStatus").post(authenticateToken, updateShopStatus);
 router
   .route("/softDeleteCategory")
   .delete(authenticateToken, softDeleteCategory);

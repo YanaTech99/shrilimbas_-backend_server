@@ -492,6 +492,7 @@ const addProducts = async (req, res) => {
   const pool = pools[tenantId];
   const { id: user_id, user_type } = req.user;
   const productFilesArray = req.files || [];
+  console.log("req.body---",req.body)
 
   if (user_type !== "VENDOR") {
     removeLocalFiles(productFilesArray);
@@ -522,6 +523,7 @@ const addProducts = async (req, res) => {
       : req.body;
 
   const product = formattedData;
+  console.log("product---",product)
   const variants =
     typeof product.variants === "string"
       ? JSON.parse(product.variants)
@@ -580,14 +582,15 @@ const addProducts = async (req, res) => {
       } else if (field === "category_ids") {
         continue;
       } else if (
-        ["tags", "attributes", "specifications", "custom_fields"].includes(
-          field
-        )
+        ["tags", "attributes", "specifications", "custom_fields"].includes(field)
       ) {
-        value =
-          typeof product[field] === "object"
-            ? JSON.stringify(product[field])
-            : {};
+        if (typeof product[field] === "object") {
+          value = JSON.stringify(product[field]);
+        } else if (typeof product[field] === "string") {
+          value = product[field];
+        } else {
+          value = "{}";
+        }
       } else if (field === "is_active") {
         value = parseInt(product[field]);
       } else {
@@ -595,6 +598,8 @@ const addProducts = async (req, res) => {
       }
       insertQuery.push(field);
       insertValues.push(value);
+      // console.log("insertQuery", insertQuery);
+      // console.log("insertValues", insertValues);
     }
     insertQuery.push("shop_id");
     insertValues.push(shop_id);
@@ -602,6 +607,7 @@ const addProducts = async (req, res) => {
     const productSql = `INSERT INTO products (${insertQuery.join(
       ", "
     )}) VALUES (${insertQuery.map(() => "?").join(", ")})`;
+    console.log("productSql", productSql);
 
     const [productResult] = await connection.execute(productSql, insertValues);
     if (productResult.affectedRows === 0) {
@@ -728,6 +734,8 @@ const addProducts = async (req, res) => {
               : defaultImageUrl;
           if (field === "gallery_images")
             return JSON.stringify(variantGalleryUrls);
+          if(field === "min_cart_value") return variant[field] ?? 1;
+          if(field === "is_deleted") return variant[field] ?? 0;
           return variant[field] ?? null;
         });
 
@@ -801,6 +809,7 @@ const updateProduct = async (req, res) => {
   const tenantId = req.tenantId;
   const pool = pools[tenantId];
   const { id: user_id, user_type } = req.user;
+  console.log("req.body", req.body);
 
   if (user_type !== "VENDOR") {
     return res.status(403).json({
@@ -1581,7 +1590,7 @@ const getPaginatedproducts = async (req, res) => {
         .json({ success: false, error: "No active shop found" });
 
     // 🔹 Build dynamic WHERE
-    let whereSQL = `p.shop_id = ? AND p.deleted_at IS NULL`;
+    let whereSQL = `p.shop_id = ? AND p.is_deleted = 0 AND p.deleted_at IS NULL`;
     const whereValues = [shop.id];
     console.log("Initial WHERE:", whereSQL, whereValues);
 
@@ -1646,7 +1655,7 @@ const getPaginatedproducts = async (req, res) => {
 
         -- categories as JSON array
         (
-          SELECT JSON_ARRAYAGG(c.title) 
+          SELECT JSON_ARRAYAGG(JSON_OBJECT('category_id', c.id, 'title', c.title)) 
           FROM product_categories pc 
           JOIN categories c ON pc.category_id = c.id
           WHERE pc.product_id = p.id
@@ -1713,6 +1722,11 @@ const getPaginatedproducts = async (req, res) => {
           ? JSON.parse(product.variants || "[]")
           : product.variants || [];
       const [mainVariant, ...otherVariants] = variants;
+
+      const categories =
+        typeof product.categories === "string"
+          ? JSON.parse(product.categories || "[]")
+          : product.categories || [];
 
       return {
         id: product.id,
@@ -2478,6 +2492,37 @@ const softDeleteCategory = async (req, res) => {
   }
 };
 
+const updateShopStatus = async(req,res)=>{
+    const tenantId = req.tenantId;
+    const pool = pools[tenantId];
+    const {id:user_id,user_type} = req.user;
+    const {shop_status} = req.body;
+
+    if(!user_id){
+        return res.status(404).json({
+            success:false,
+            error:"User not found"
+        })
+    }
+
+    const [shop] = await pool.execute(
+        "UPDATE shops SET is_open = ? WHERE user_id = ?",
+        [shop_status,user_id]
+    );
+
+    if(!shop){
+        return res.status(404).json({
+            success:false,
+            error:"Shop not found"
+        })
+    }
+
+    return res.status(200).json({
+        success:true,
+        message:"Shop status updated successfully"
+    })
+}
+
 export {
   updateShop,
   getShopProfile,
@@ -2498,4 +2543,5 @@ export {
   softDeleteProduct,
   softDeleteVariant,
   softDeleteCategory,
+  updateShopStatus,
 };

@@ -95,7 +95,7 @@ const drawItemsTable = (doc, items, startY) => {
         align: "center",
       },
       {
-        text: formatCurrency(item.tax_per_unit),
+        text: `${formatCurrency(item.tax_per_unit)}%`,
         x: tableStartX + 380,
         width: 60,
         align: "center",

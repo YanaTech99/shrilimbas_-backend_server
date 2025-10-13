@@ -3,8 +3,18 @@ import cors from "cors";
 import cookieParser from "cookie-parser";
 import { multiTenantMiddleware } from "./assets/middleware/multiTenant.middlerware.js";
 import morgan from "morgan";
+import http from 'http'
+import { Server } from "socket.io";
+import helmet from "helmet";
 
 const app = express();
+const server = http.createServer(app)
+const io = new Server(server,{
+  cors : {  
+    origin : process.env.CORS_ORIGIN,
+    methods : ["GET", "POST"],
+  }
+});
 
 app.use(
   cors({
@@ -24,11 +34,12 @@ app.use((req, res, next) => {
   }
 });
 
-app.use(morgan("dev"))
-
+app.use(helmet());
+app.use(morgan("combined"))
 app.use(express.static("public"));
-
+app.use(express.json())
 app.use(cookieParser());
+app.set("io", io);
 
 // ****************** V1 API ******************
 
@@ -69,7 +80,7 @@ import paymentRoutesV2 from "./assets/V2/router/payment.route.js";
 import settingRoutesV2 from "./assets/V2/router/setting.route.js";
 import deliveryBoyRoutesV2 from "./assets/V2/router/delivery_boy.route.js";
 import pagesRoutesV2 from "./assets/V2/router/pages.route.js";
-import porterRoutesV2 from "./assets/V2/router/porter.route.js";
+import analyticsRoutesV2 from "./assets/V2/router/analytics.route.js";
 
 // define routes
 app.use("/api/v2/auth", multiTenantMiddleware, authRoutesV2);
@@ -84,7 +95,7 @@ app.use("/api/v2/payment", multiTenantMiddleware, paymentRoutesV2);
 app.use("/api/v2/setting", multiTenantMiddleware, settingRoutesV2);
 app.use("/api/v2/delivery-boy", multiTenantMiddleware, deliveryBoyRoutesV2);
 app.use("/api/v2/pages", multiTenantMiddleware, pagesRoutesV2);
-app.use("/api/v2/porter", multiTenantMiddleware, porterRoutesV2);
+app.use("/api/v2/analytics", multiTenantMiddleware, analyticsRoutesV2);
 // ****************** V2 API ******************
 
 // ✅ Error-handling middleware
